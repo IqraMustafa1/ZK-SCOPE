@@ -1,10 +1,8 @@
 ````markdown
 # SCOPE++ (ZK-PAC + Hybrid PQ) — Mandatory End-to-End Runbook (Windows + WSL)
 
-**Nothing is optional in this runbook. Follow in order.**  
-Topology: **Windows** runs Canton + Ledger + JSON-API + PowerShell harness; **WSL (Ubuntu)** runs Flask (OQS PQ support).
-
----
+Nothing is optional in this runbook. Follow in order.  
+Topology: Windows runs Canton + Ledger + JSON-API + PowerShell harness; WSL (Ubuntu) runs Flask (OQS PQ support).
 
 ## STEP 1 — Start Canton + Connect Domain + Upload DAR (Windows PowerShell)
 
@@ -183,3 +181,4 @@ curl -s "${JSON_API}/v1/packages" | head
 
 ```
 ```
+
