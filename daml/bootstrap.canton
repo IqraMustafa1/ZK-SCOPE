@@ -1,0 +1,7 @@
+participants.participant1.run()
+domains.local.run()
+participants.participant1.domains.connect_local("local")
+
+// Upload your DAR
+val dar = "daml/dist/test-0.0.1.dar"
+participants.participant1.participant.uploadDarFromFile(dar)

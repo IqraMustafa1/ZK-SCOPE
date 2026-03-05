@@ -1,0 +1,497 @@
+.\test_flask_operator.ps1 `
+  -FlaskMode External `
+  -FlaskHost 127.0.0.1 `
+  -FlaskPort 5000 `
+  -ForceSetup:$true `
+  -RunRunAll:$true `
+  -RunHybridRelay `
+  -UseZkPac:$true `
+  -PolicyId "policy-1" `
+  -TargetDeviceDisplay 'Device1' `
+  -Epoch 0 `
+  -DeviceKyberPubB64 $StoredKyber_1line
+
+
+
+
+echo $env:JAVA_HOME
+$env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-17.0.17.10-hotspot"
+$env:Path = "$env:JAVA_HOME\bin;$env:Path"
+Test-Path "$env:JAVA_HOME\bin\java.exe"
+
+source .venv/bin/activate
+
+.\canton.bat -c "C:\canton\canton\bin\canton.conf"
+participants.local.head.domains.connect_local(domains.local.head)
+participants.local.head.domains.is_connected(domains.local.head)
+
+
+participants.local.head.dars.upload("""C:\Users\mustafai\Desktop\SCOPE-Framework-main\SCOPE-Framework-main\.daml\dist\test-0.0.1.dar""")
+participants.local.head.dars.list()
+
+$TOK = "$PWD\bootstrap.jwt"
+
+ daml json-api `
+  --ledger-host localhost `
+  --ledger-port 6866 `
+  --address 0.0.0.0 `
+  --http-port 7576 `
+   --allow-insecure-tokens `
+  --access-token-file $TOK
+
+cd "C:\canton\canton\bin"
+.\canton.bat -c "C:\canton\canton\bin\canton.conf"
+Compiling (synthetic)/ammonite/predef/ArgsPredef.sc
+
+
+
+
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+ Unblock-File .\test_flask_operator.ps1  
+
+   
+# 1) Paste Kyber pub (base64) and sanitize whitespace
+$StoredKyber = @"
+LeCGm0TOTJmFR8UrruNwC1aPrxK+xflosVViRMSkloJcGHBD2ZiErtObCrxqqTiAQ0BjX3mJjAVJqosdekiW5GcbHCoEMjqiiEF1+1G5xtFmTwQtq0m6y/zP2flJ6WZ5X3UVlTdezgV80OpZtltA/0NxHZZEeZnCI/pmbncAaVcgAhlyfAVBLSMeDskHXMFExLU9ThMv/gxks6RCSyGHM9dOJ+vNQMRvz4mHFvBjY0MEIddO9CmtT8sZilYKE9sd1+w8tXK7CuhmKbV+LIy/V0kCfGelNbZmclkyUey7/jrITDEeJDYrbtywsnxHVMIBBAqqc4SwcWFb0SNqfpiOdgoWnjWccTnBkfGdoMJzCkFXYiW02Te9xSQckrozn2s//MEJWcisfMaBBxs0TzceHhZTWMYKknnF1xrMaeWv0RtrR2ol0fO7ygxNvzk6v9Cn35mVRGwxPGRYy2LHRCFmQPIxnWSH1Ee2Cxav+cpZdGamyuo7MhVcJbwYDTDDLqxXs5YjWAWMXHkWHsFc7DHNYStopkp1IteZXyNLD8WKNGyMAjNtcywsqStGUEwokutnq0M5WagLsOMU/5Ig8QV41NWNK2Vt2jq/DDWVbFQ3xUB6v0HBzJmAcdQexTFSRgYVK3ZGgik0xgmFVHFuoKQlGNMU5SAERHmqhwNNeSUUVxkoRVxXAL3HKQRNgYukIMsxFrCGkBajBpgqBaZxtXh0Y8apCeNWWANwwBWDqmqYKrCU3WC6lgCERDp4HZe1sVUAQKe2RCFE0NZsOdB3dgU1sGXIRtor/6R8UJl2IkFL/kiRoFw9rNMwFquhkRqhnrIROcZ8EtaM/YRMX9dTXwasj1VuK+UhY/i7MvEmKWAZArar/BUgIPpOPtll1nJHSnW7i+dO0qy5SHQ4BMtWOUcUarRFWKZ1w4wG9WF0vcm8PRqORtA3RAIflpHNmwybisSsumrAiEjHz5iEQwm9UfMlnyCOAMmECMApJlW/z5cxGwSsuVakUYOZtqMJx0IoXlKRYlcTNnGtphyagoAfYqcAlvAHuKMzFWBwpld5I4APeZvJhVlP4BRQQYhYKGRpZxQJc2I43CxLLFOrk9lRzPWe7CyZmmazmmSxJoomvaIJrQsaKQwusap8rygxEIZ0aSo5IfARQ0EQ5hGtHuqkXBNPnIrPzcGHE6IrbDc8aRK9AXS1OSORlZdTe+s11yh7I4uR7qiFV4I/ypdPwnwoJ3dJcUScgUFp6VPJ0+VjvqJZbXwe/9pALjdrstaEE6pUvngCPlylMgvImdfFKzDBO+Q6JNl31ZtyVMYMlmqmERpM9OkOgwTN8nJcp2U4jHpHOJOdbHkAOemq6JE3kKxs/TPIpEypsHbPYdGclbxFx9dTwnYVfOJGkPPOg7WSzVczIMydq+kuNmcvVqi5V+C6RZlTc9eQJgzEBuoaa3cr7/e2IGp2WZZLKwIJwoKAVgZtTbmyO+OoAwHEwkFvD1IdLoUK0qKaTcYBQwYrAUpFyiysrciqfhyISoUHbHwWvCu5h/mC6atVNtF9dkybVdozvI64LVL4SxRw5N+mlExZfPFc41U=
+"@ -replace '\s',''
+
+
+
+.\test_flask_operator.ps1 `
+  -FlaskMode External `
+  -FlaskHost 172.18.10.76 `
+  -FlaskPort 5000 `
+  -RunRunAll:$true `
+  -RunHybridRelay `
+  -TargetDeviceDisplay 'Device1' `
+  -Epoch 0 `
+  -DeviceKyberPubB64 $StoredKyber
+
+
+py -3 .\make_operator_jwt.py .\operator.jwt
+
+export EDGE_ID="EdgeNode1::1220edge..."
+export OPERATOR_ID="Operator::1220..."
+python make_edge_jwt.py edge.jwt
+
+export OPERATOR_ID="Operator::1220..."
+python make_operator_jwt.py token.txt
+
+
+cd "C:\Users\iqra.mustafa\Desktop\Email\Paper2Scope\SCOPE-NEW\NEW\daml"
+
+
+# 1) Set env vars to the full party identifiers from your log:
+$env:EDGE_ID     = "EdgeNode1::122069098d96859ad5adc852ae898a77ce4b0ea2da0c9ed4a9b1ff5650a847f9b49a"
+
+$env:OPERATOR_ID = "Operator::122069098d96859ad5adc852ae898a77ce4b0ea2da0c9ed4a9b1ff5650a847f9b49a"
+
+# 2) Make sure the secret matches your JSON-API config
+$env:JSON_API_SECRET = "secret"   # or "my-super-secret" – must match the one you used for operator.jwt
+
+# 3) Generate the edge token file:
+py make_edge_jwt.py edge.jwt
+
+
+
+
+
+
+
+
+
+
+$pkg = "f5987124eb04505ed318065f3df68bc36388e5014d08fb05f60fdf8935cfaf41"
+
+# set common env names (your script is likely using one of these)
+$env:PKG = $pkg
+$env:PACKAGE_ID = $pkg
+$env:DAML_PACKAGE_ID = $pkg
+$env:MAIN_PACKAGE_ID = $pkg
+
+# (optional) sanity
+Write-Host "PKG=$env:PKG"
+
+
+
+
+
+
+
+
+
+New-Item -ItemType Directory -Force "C:\Users\mustafai\Desktop\SCOPE-Framework-main\SCOPE-Framework-main\daml\.daml\dist" | Out-Null
+Copy-Item "C:\Users\mustafai\Desktop\SCOPE-Framework-main\SCOPE-Framework-main\.daml\dist\test-0.0.1.dar" `
+          "C:\Users\mustafai\Desktop\SCOPE-Framework-main\SCOPE-Framework-main\daml\.daml\dist\test-0.0.1.dar" -Force
+
+
+
+ clean
+daml build
+daml ledger upload-dar .\.daml\dist\test-0.0.1.dar --host localhost --port 6866
+
+daml script --dar ".\.daml\dist\test-0.0.1.dar" --script-name Main:setupFresh --ledger-host localhost --ledger-port 6866
+daml script --dar ".\.daml\dist\test-0.0.1.dar" --script-name RunAll:seedRelayLogs --ledger-host localhost --ledger-port 6866
+daml script --dar ".\.daml\dist\test-0.0.1.dar" --script-name RunAll:calcMedianRelayCounters --ledger-host localhost --ledger-port 6866
+
+
+cd /mnt/c/Users/mustafai/Desktop/SCOPE-Framework-main/SCOPE-Framework-main
+
+# JSON-API (Windows host from WSL usually 172.18.0.1; keep yours if different)
+export JSON_API="http://172.18.0.1:7576"
+
+# package + operator
+export PKG="85cffb208504f7213cf64b1ae8741b7aa2ee9bfc3abdefe73d0f6bda32f98ccf"
+export DAML_PKG_ID="$PKG"
+export OPERATOR="Operator::1220e0318c0b848092907056e81729929bc0be50e622d72c3b4367cc5d1b1bf0fb4a"
+
+# JWT paths
+export OP_JWT="/mnt/c/Users/mustafai/Desktop/SCOPE-Framework-main/SCOPE-Framework-main/operator.jwt"
+export BOOTSTRAP_JWT="/mnt/c/Users/mustafai/Desktop/SCOPE-Framework-main/SCOPE-Framework-main/bootstrap.jwt"
+
+# Flask bind (THIS is correct)
+export FLASK_HOST="0.0.0.0"
+export FLASK_PORT="5000"
+
+
+
+cd "C:\Users\mustafai\Desktop\SCOPE-Framework-main\SCOPE-Framework-main"
+
+$tok = Get-Content .\bootstrap.jwt -Raw
+$pkgs = (Invoke-RestMethod -Method Get -Uri "http://localhost:7576/v1/packages" -Headers @{ Authorization = "Bearer $tok" }).result
+
+# pick one (usually the newest / last is your uploaded one)
+$env:PKG = $pkgs[-1]
+
+# set all aliases your scripts might read
+$env:DAML_PKG_ID      = $env:PKG
+$env:PACKAGE_ID       = $env:PKG
+$env:MAIN_PACKAGE_ID  = $env:PKG
+
+"Using PKG=$($env:PKG)"
+
+
+
+
+
+cd "C:\Users\mustafai\Desktop\SCOPE-Framework-main\SCOPE-Framework-main"
+
+# delete stale tokens (your earlier command had a typo ". \bootstrap.jwt")
+Remove-Item .\operator.jwt, .\bootstrap.jwt -Force -ErrorAction SilentlyContinue
+Remove-Item .\daml\token.txt -Force -ErrorAction SilentlyContinue
+
+
+
+Firewall---------
+ New-NetFirewallRule -DisplayName "DAML JSON-API 7576" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 7576
+
+
+ $env:DAML_PKG_ID = "97b883cd8a2b7f49f90d5d39c981cf6e110cf1f1c64427a28a6d58ec88c43657"
+$env:PKG         = $env:DAML_PKG_ID
+
+
+.\test_flask_operator.ps1 `
+  -FlaskMode External `
+  -FlaskHost 127.0.0.1 `
+  -FlaskPort 5000 `
+  -RunRunAll:$true `
+  -RunHybridRelay `
+  -TargetDeviceDisplay 'Device1' `
+  -Epoch 0 `
+  -DeviceKyberPubB64 $StoredKyber
+
+
+
+ $env:JSON_API_SECRET = "my-super-secret"
+$env:OPERATOR_ID     = "Operator::1220f7e050a401702436c70262324775429580d3d16adb7e25e7d5d5673c1e51a72e"
+$env:APPLICATION_ID  = "scope-app"
+ $env:LEDGER_ID       = "local"
+ $env:PARTICIPANT_ID  = "local"                                                                                    
+ $env:JWT_AUDIENCE    = "json-api"
+$env:TOKEN_PATH      = "C:\Users\mustafai\Desktop\SCOPE-Framework-main\SCOPE-Framework-main\token.txt"
+
+py .\generate_jwt.py
+-------------------------WSL-----------------------------
+
+cd /mnt/c/Users/mustafai/Desktop/SCOPE-Framework-main/SCOPE-Framework-main/daml
+
+# Token file (WSL path)
+export TOKEN_PATH="/mnt/c/Users/mustafai/Desktop/ZK-SCOPE/SCOPE-Framework-main/SCOPE-Framework-main/token.txt"
+
+# 1) Package Id (NO '=')
+export PKG="ff264bf406bfb527d00ab1abe172e93b1b4a317a7a6508c7d5d226e5454d3361"
+export DAML_PKG_ID="$PKG"
+
+# 2) Operator party id (MUST match your /v1/parties output)
+# Use the Operator::... you saw in PowerShell from /v1/parties.
+export OPERATOR="Operator::1220f7e050a401702436c70262324775429580d3d16adb7e25e7d5d5673c1e51a72e"
+
+# 3) JSON-API endpoint from WSL -> Windows host
+WIN_HOST_IP="$(awk '/nameserver/ {print $2; exit}' /etc/resolv.conf)"
+export JSON_API="http://${WIN_HOST_IP}:7576"
+
+# 4) Flask bind
+export FLASK_HOST="0.0.0.0"
+export FLASK_PORT="5000"
+
+python3 flask_app.py
+
+
+
+# ===================== ONE-PANE: FIND THE RIGHT PACKAGE THAT HAS YOUR CONTRACTS =====================
+Set-Location "C:\Users\mustafai\Desktop\SCOPE-Framework-main\SCOPE-Framework-main"
+
+$JSON_API = "http://127.0.0.1:7576"
+$tok = (Get-Content -Raw .\bootstrap.jwt).Trim()
+$H   = @{ Authorization = "Bearer $tok"; "Content-Type"="application/json" }
+
+function Post-Json($url, $obj) {
+  $json  = ($obj | ConvertTo-Json -Depth 50 -Compress)
+  $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+  return Invoke-RestMethod -Method Post -Uri $url -Headers $H -Body $bytes
+}
+
+# 1) List packages
+$pkgs = (Invoke-RestMethod -Method Get -Uri "$JSON_API/v1/packages" -Headers $H).result
+"Using JSON_API=$JSON_API"
+"Packages visible: $($pkgs.Count)"
+
+# 2) Try every package for Main:Device and Main:BrokerContract
+$hits = @()
+
+foreach ($p in $pkgs) {
+  $tDev = "$p`:Main:Device"
+  $tBC  = "$p`:Main:BrokerContract"
+
+  try {
+    $rDev = Post-Json "$JSON_API/v1/query" @{ templateIds = @($tDev) }
+    $cDev = @($rDev.result).Count
+  } catch { $cDev = -1 }
+
+  try {
+    $rBC = Post-Json "$JSON_API/v1/query" @{ templateIds = @($tBC) }
+    $cBC = @($rBC.result).Count
+  } catch { $cBC = -1 }
+
+  if ($cDev -gt 0 -or $cBC -gt 0) {
+    $hits += [pscustomobject]@{ packageId=$p; Devices=$cDev; BrokerContracts=$cBC }
+  }
+}
+
+if ($hits.Count -eq 0) {
+  Write-Host "`n❌ No package returned any Main:Device or Main:BrokerContract." -ForegroundColor Red
+  Write-Host "That means ONE of these is true:"
+  Write-Host "  (A) Your contracts are under a DIFFERENT module name than 'Main'"
+  Write-Host "  (B) JSON-API is pointing to a DIFFERENT participant/ledger than your daml script"
+  Write-Host "Next command to confirm participant: GET $JSON_API/v1/parties"
+  return
+}
+
+"`n✅ Packages that actually have your active contracts:"
+$hits | Sort-Object Devices -Descending | Format-Table -AutoSize
+
+# 3) Pick best package (prefer one with Devices>0, else BrokerContract>0)
+$best = ($hits | Sort-Object @{Expression="Devices";Descending=$true}, @{Expression="BrokerContracts";Descending=$true} | Select-Object -First 1)
+
+$PKG_REAL = $best.packageId
+"`n✅ Using REAL PKG for Main templates: $PKG_REAL"
+
+# 4) Export so your scripts use the correct package id
+$env:DAML_PKG_ID     = $PKG_REAL
+$env:PKG             = $PKG_REAL
+$env:PACKAGE_ID      = $PKG_REAL
+$env:MAIN_PACKAGE_ID = $PKG_REAL
+
+# 5) Confirm we can now see Devices
+$resDev = Post-Json "$JSON_API/v1/query" @{ templateIds = @("$PKG_REAL`:Main:Device") }
+"Device query returned: $(@($resDev.result).Count)"
+if (@($resDev.result).Count -gt 0) {
+  "First Device name     : $($resDev.result[0].payload.name)"
+  "First Device publicKey: $($resDev.result[0].payload.publicKey)"
+}
+
+# 6) Confirm BrokerContract too
+$resBC = Post-Json "$JSON_API/v1/query" @{ templateIds = @("$PKG_REAL`:Main:BrokerContract") }
+"BrokerContract query returned: $(@($resBC.result).Count)"
+
+# ===================== END =====================
+
+# ===================== END =====================
+Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:7576/v1/parties" -Headers @{ Authorization=("Bearer " + (Get-Content -Raw .\bootstrap.jwt).Trim()) } |
+  Select-Object -First 10
+
+
+
+# Always pin the REAL package for this session
+$env:DAML_PKG_ID     = "86828b9843465f419db1ef8a8ee741d1eef645df02375ebf509cdc8c3ddd16cb"
+$env:PKG             = $env:DAML_PKG_ID
+$env:PACKAGE_ID      = $env:DAML_PKG_ID
+$env:MAIN_PACKAGE_ID = $env:DAML_PKG_ID
+
+"Pinned PKG=$env:DAML_PKG_ID"
+
+
+$env:JSON_API="http://127.0.0.1:7576"
+$env:DAML_PKG_ID="86828b9843465f419db1ef8a8ee741d1eef645df02375ebf509cdc8c3ddd16cb"
+
+# Make Flask use the exact operator token you just generated
+$env:OPERATOR_JWT_PATH="C:\Users\mustafai\Desktop\SCOPE-Framework-main\SCOPE-Framework-main\operator.jwt"
+
+# Optional: also set a generic name in case your Flask code uses TOKEN_PATH
+$env:TOKEN_PATH=$env:OPERATOR_JWT_PATH
+
+
+
+
+
+
+--------------------test no device -------------------
+$JWT = (Get-Content .\bootstrap.jwt -Raw).Trim()
+$H   = @{ Authorization="Bearer $JWT"; "Content-Type"="application/json" }
+$JSON_API = "http://localhost:7576"
+
+$pkgs = (Invoke-RestMethod -Method Get -Uri "$JSON_API/v1/packages" -Headers $H).result
+
+$hits = foreach ($p in $pkgs) {
+  try {
+    $r = Invoke-RestMethod -Method Get -Uri "$JSON_API/v1/packages/$p" -Headers $H -ErrorAction Stop
+
+    # The "templates" may be located differently depending on JSON-API version.
+    # So we stringify the JSON and search for template names safely.
+    $j = $r | ConvertTo-Json -Depth 50
+
+    [pscustomobject]@{
+      pkg        = $p
+      HasDevice  = ($j -match '"Device"' -and $j -match '"Main"')
+      HasLogReq  = ($j -match '"LogRequest"' -and $j -match '"Main"')
+      HasRelay   = ($j -match '"RelayLog"' -and $j -match '"Main"')
+    }
+  } catch {
+    [pscustomobject]@{
+      pkg        = $p
+      HasDevice  = $false
+      HasLogReq  = $false
+      HasRelay   = $false
+      Error      = $_.Exception.Message
+    }
+  }
+}
+
+$hits | Format-Table -AutoSize
+
+
+Get-ChildItem -Recurse -Filter *.dar | Select-Object FullName
+$DAR = (Get-ChildItem -Recurse -Filter *.dar | Select-Object -First 1).FullName
+daml damlc inspect-dar $DAR | Select-String -Pattern "Package ID|template|Main:Device|Device|LogRequest|RelayLog"
+
+
+$DAR = ".\.daml\dist\test-0.0.1.dar"
+$out = & daml damlc inspect-dar $DAR 2>&1
+$out
+# Print only lines that look like package ids (64 hex chars)
+$out | Select-String -Pattern '\b[a-f0-9]{64}\b' | ForEach-Object { $_.Matches.Value } | Select-Object -Unique
+
+# Always pin the REAL package for this session
+$env:DAML_PKG_ID     = "cbaac6adac62ffb47f35cae6b173e10b1da0a8a966033047ec22bc6b7ddad8ee"
+$env:PKG             = $env:DAML_PKG_ID
+$env:PACKAGE_ID      = $env:DAML_PKG_ID
+$env:MAIN_PACKAGE_ID = $env:DAML_PKG_ID
+
+"Pinned PKG=$env:DAML_PKG_ID"
+
+-------------check party identifiesr for Client HTest1----------
+$JWT = (Get-Content ..\operator.jwt -Raw).Trim()
+$H   = @{ Authorization="Bearer $JWT"; "Content-Type"="application/json" }
+
+Invoke-RestMethod -Method Get -Uri "http://localhost:7576/v1/parties" -Headers $H |
+  Select-Object -ExpandProperty result |
+  Select-Object displayName, identifier
+--------------Generate Edge token ----------------
+# from your /v1/parties output:
+$env:EDGE_ID     = "EdgeNode1::1220d84116973c8dd39e1086fec1f72cbae92a69c9bf3ceb4be03df82c286d45a3dc"
+$env:OPERATOR_ID = "Operator::1220d84116973c8dd39e1086fec1f72cbae92a69c9bf3ceb4be03df82c286d45a3dc"
+
+# must match the secret your json-api was started with (most setups use "secret")
+$env:JSON_API_SECRET = "secret"
+py .\make_edge_jwt.py .\edge.jwt
+----------------------export in wsl-----------
+cd /mnt/c/Users/mustafai/Desktop/SCOPE-Framework-main/SCOPE-Framework-main/daml
+
+export OPERATOR_TOKEN_PATH="/mnt/c/Users/mustafai/Desktop/SCOPE-Framework-main/SCOPE-Framework-main/operator.jwt"
+export EDGE_TOKEN_PATH="/mnt/c/Users/mustafai/Desktop/SCOPE-Framework-main/SCOPE-Framework-main/daml/edge.jwt"
+
+# optional (only if your script reads these)
+export FLASK_URL="http://127.0.0.1:5000"
+export JSON_API_URL="http://127.0.0.1:7576"
+-----------for hybrid mode-------------
+python3 HTest1.py --mode hybrid --with-relay --ep-relay "/relay_message"
+------------------------Classic mode ---------------
+
+python3 HTest1.py \
+  --mode classic \
+  --flask-url http://127.0.0.1:5000 \
+  --json-api-url http://127.0.0.1:7576 \
+  --operator-jwt-file /mnt/c/Users/mustafai/Desktop/SCOPE-Framework-main/SCOPE-Framework-main/operator.jwt
+
+cd /mnt/c/Users/mustafai/Desktop/SCOPE-Framework-main/SCOPE-Framework-main/daml
+
+export OPERATOR_TOKEN_PATH="/mnt/c/Users/mustafai/Desktop/SCOPE-Framework-main/SCOPE-Framework-main/operator.jwt"
+python3 HTest1.py --mode classic
+
+-----------to run both mode at a time -------------
+python3 HTest1.py --mode both
+
+-------------------
+python3 HTest1.py --mode hybrid --with-relay --sleep-ms 50
+
+-------------------------------
+python3 HTest1.py --mode hybrid --with-relay --reps 1 --warmup 0 --sleep-ms 100
+
+
+--------------------------
+python3 HTest1.py \
+  --mode both \
+  --with-relay \
+  --reps 30 \
+  --warmup 5 \
+  --msg 2048 \
+  --attrs "1,2,4,8,16,21" \
+  --deterministic-payload \
+  --seed 1337 \
+  --attestation-policy reuse \
+  --attestations-n 2 \
+  --sleep-ms 50 \
+  --csv paper_results.csv \
+  --fresh-csv
+
+python3 HTest1.py \
+  --mode hybrid \
+  --reps 30 \
+  --warmup 5 \
+  --msg 2048 \
+  --attrs "1,2,4,8,16,21" \
+  --deterministic-payload \
+  --seed 1337 \
+  --attestation-policy reuse \
+  --attestations-n 2 \
+  --sleep-ms 50 \
+  --csv results_hybrid.csv \
+  --fresh-csv \
+  --run-id hybrid_cold
+
+
+
+export ZK_POLICY_ID="POLICY1"
+export ZK_LEAF_HASH="leaf-hash-demo"
+export ZK_REVEALED_ATTRS="clearance=A"
+export ZK_MERKLE_PATH=""
+
+python3 HTest1.py \
+  --mode hybrid --with-relay \
+  --use-zkpac \
+  --reps 30 --warmup 5 \
+  --attrs "1,2,4,8,16,21" \
+  --deterministic-payload --seed 1337 \
+  --attestation-policy reuse --attestations-n 2 \
+  --sleep-ms 50 \
+  --csv results_hybrid_zkpac.csv --fresh-csv

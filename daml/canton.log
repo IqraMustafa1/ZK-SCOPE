@@ -1,0 +1,334 @@
+2025-10-05 22:33:25,137 [main] INFO  c.d.canton.CantonCommunityApp$ - Starting Canton version 2.10.0
+2025-10-05 22:33:27,701 [main] INFO  c.d.canton.CantonCommunityApp$ - Starting up with resolved config:
+domains {
+    local {
+        admin-api {
+            port=6868
+        }
+        init {
+            domain-parameters {
+                protocol-version="7"
+            }
+        }
+        public-api {
+            port=6867
+        }
+        storage {
+            type=memory
+        }
+    }
+}
+parameters {
+    dev-version-support=true
+    non-standard-config=true
+    ports-file="C:\\Users\\IQRA~1.MUS\\AppData\\Local\\Temp\\extra-dir-554639810678\\sandbox-portfile"
+}
+participants {
+    sandbox {
+        admin-api {
+            port=6866
+        }
+        ledger-api {
+            port=6865
+            user-management-service {
+                enabled=true
+            }
+        }
+        parameters {
+            dev-version-support=true
+        }
+        storage {
+            type=memory
+        }
+    }
+}
+
+2025-10-05 22:33:27,748 [main] INFO  c.d.c.e.CommunityEnvironment - Deriving 8 as number of threads from 'sys.runtime.availableProcessors()'. Please use '-Dscala.concurrent.context.numThreads' to override.
+2025-10-05 22:33:28,335 [canton-env-ec-37] INFO  o.a.pekko.event.slf4j.Slf4jLogger - Slf4jLogger started
+2025-10-05 22:33:28,557 [main] INFO  c.d.c.t.OpenTelemetryFactory$ - Initializing open telemetry with Exporter.Disabled
+2025-10-05 22:33:28,725 [main] INFO  c.d.c.e.CommunityEnvironment tid:152c4c0226a9263fb1b0ddcb466faf7b - Automatically starting all instances
+2025-10-05 22:33:29,704 [canton-env-ec-42] INFO  c.d.c.crypto.Crypto:domain=local - 'crypto' is now in state Ok(). Previous state was Not Initialized.
+2025-10-05 22:33:29,715 [canton-env-ec-41] INFO  c.d.c.d.DomainNodeBootstrap:domain=local - Starting admin-api services on CommunityAdminServerConfig(127.0.0.1,Some(6868),None,Some(BasicKeepAliveServerConfig(40s,20s,20s,false)),10485760)
+2025-10-05 22:33:29,979 [canton-env-ec-37] INFO  c.d.c.c.Crypto:participant=sandbox - 'crypto' is now in state Ok(). Previous state was Not Initialized.
+2025-10-05 22:33:29,983 [canton-env-ec-40] INFO  c.d.c.p.ParticipantNodeBootstrap:participant=sandbox - Starting admin-api services on CommunityAdminServerConfig(127.0.0.1,Some(6866),None,Some(BasicKeepAliveServerConfig(40s,20s,20s,false)),10485760)
+2025-10-05 22:33:31,504 [canton-env-ec-41] INFO  c.d.c.d.DomainNodeBootstrap:domain=local - 'domain' is now in state ServingStatus(status = 'SERVING'). Previous state was ServingStatus(status = 'NOT_SERVING').
+2025-10-05 22:33:31,823 [canton-env-ec-37] INFO  c.d.c.d.DomainNodeBootstrap:domain=local - Node is not initialized yet. Performing automated default initialization.
+2025-10-05 22:33:32,883 [canton-env-ec-37] INFO  c.d.c.d.t.DomainTopologyManager:domain=local tid:a971fc43b6ba6e84b073f14c89166c0d - Applied topology transaction Add NamespaceDelegation(122071c8cb3b..., SigningPublicKey(id = 122071c8cb3b..., format = Tink, scheme = Ed25519), true) at 2025-10-05T21:33:32.878413Z
+2025-10-05 22:33:33,009 [canton-env-ec-40] INFO  c.d.c.d.t.DomainTopologyManager:domain=local tid:a971fc43b6ba6e84b073f14c89166c0d - Applied topology transaction Replace DomainParametersChange(
+  local::122071c8cb3b...,
+  DynamicDomainParameters(
+    participant response timeout = 30s,
+    mediator reaction timeout = 30s,
+    transfer exclusivity timeout = 1m,
+    topology change delay = 0.25s,
+    ledger time record time tolerance = 1m,
+    mediator deduplication timeout = 2m,
+    reconciliation interval = 1m,
+    max rate per participant = 1000000,
+    max request size = 10485760,
+    catchup config = CatchUpConfig(catchUpIntervalSkip = 5, nrIntervalsToTriggerCatchUp = 2)
+  )
+) at 2025-10-05T21:33:33.004150Z
+2025-10-05 22:33:33,064 [canton-env-ec-41] INFO  c.d.c.d.t.DomainTopologyManager:domain=local tid:a971fc43b6ba6e84b073f14c89166c0d - Applied topology transaction Add OwnerToKeyMapping(DOM::local::122071c8cb3b..., SigningPublicKey(id = 12207d969171..., format = Tink, scheme = Ed25519)) at 2025-10-05T21:33:33.053977Z
+2025-10-05 22:33:33,102 [canton-env-ec-37] INFO  c.d.c.d.t.DomainTopologyManager:domain=local - Applied topology transaction Add OwnerToKeyMapping(MED::local::122071c8cb3b..., SigningPublicKey(id = 1220003bb010..., format = Tink, scheme = Ed25519)) at 2025-10-05T21:33:33.100743Z
+2025-10-05 22:33:33,136 [canton-env-ec-39] INFO  c.d.c.d.t.DomainTopologyManager:domain=local - Applied topology transaction Add MediatorDomainState(Both, local::122071c8cb3b..., MED::local::122071c8cb3b...) at 2025-10-05T21:33:33.135780Z
+2025-10-05 22:33:33,182 [canton-env-ec-42] INFO  c.d.c.d.t.DomainTopologyManager:domain=local - Applied topology transaction Add OwnerToKeyMapping(SEQ::local::122071c8cb3b..., SigningPublicKey(id = 12202b5552c2..., format = Tink, scheme = Ed25519)) at 2025-10-05T21:33:33.182199Z
+2025-10-05 22:33:33,192 [canton-env-ec-42] INFO  c.d.c.d.DomainNodeBootstrap:domain=local - Initializing node with id NodeId(local::122071c8cb3b...)
+2025-10-05 22:33:33,682 [canton-env-ec-39] INFO  c.d.c.d.s.SequencerRuntime:domain=local - Sequencer is healthy
+2025-10-05 22:33:33,745 [canton-env-ec-37] INFO  c.d.c.h.MutableHealthQuasiComponent:domain=local - 'sequencer' is now in state SequencerHealthStatus(active = true). Previous state was SequencerHealthStatus(active = false).
+2025-10-05 22:33:33,745 [canton-env-ec-37] INFO  c.d.c.d.DomainNodeBootstrap:domain=local - 'sequencer-health-check-service' is now in state ServingStatus(status = 'SERVING'). Previous state was ServingStatus(status = 'NOT_SERVING').
+2025-10-05 22:33:34,541 [canton-env-ec-39] INFO  c.d.c.s.c.SequencerClientImpl:domain=local/client=topology-manager - No event found up to 0001-01-01T00:00:00Z. Resubscribing from the beginning.
+2025-10-05 22:33:34,553 [canton-env-ec-39] INFO  c.d.c.s.c.SequencerClientImpl:domain=local/client=topology-manager - Processing events from the SequencedEventStore from 0001-01-01T00:00:00.000001Z on
+2025-10-05 22:33:34,621 [canton-env-ec-41] INFO  c.d.c.s.c.SequencerClientImpl:domain=local/client=topology-manager - Starting subscription for alias=SEQ::local::122071c8cb3b... at timestamp None; next counter 0
+2025-10-05 22:33:34,646 [canton-env-ec-41] INFO  c.d.c.h.DelegatingMutableHealthComponent:domain=local/client=topology-manager - 'sequencer-client' is now in state Ok(). Previous state was Not Initialized.
+2025-10-05 22:33:34,765 [canton-env-ec-39] INFO  c.d.c.d.i.TopologyManagementInitialization$:domain=local - Sending initial topology transactions to domain members Set(DOM::local::122071c8cb3b..., MED::local::122071c8cb3b...) as DOM::local::122071c8cb3b...
+2025-10-05 22:33:34,884 [canton-env-ec-40] INFO  c.d.c.d.s.a.MemberAuthenticationServiceOld:domain=local - DOM::local::122071c8cb3b... authenticated new token with expiry 2025-10-05T22:33:34.879279Z
+2025-10-05 22:33:34,997 [canton-env-ec-43] INFO  c.d.c.d.s.s.GrpcSequencerService:domain=local - DOM::local::122071c8cb3b... subscribes from counter=0
+2025-10-05 22:33:35,365 [canton-env-ec-40] INFO  c.d.c.d.s.s.GrpcSequencerService:domain=local tid:dc8ddc8c725d872e3e853cca7b73a9df - 'DOM::local::122071c8cb3b...' sends request with id '485ced3b-8c6b-48de-8f53-ddced7ab923f' of size 1791 bytes with 2 envelopes.
+2025-10-05 22:33:35,488 [canton-env-ec-40] INFO  c.d.c.d.s.s.SequencerReader$EventsReader:domain=local/subscriber=DOM::local::122071c8cb3b tid:dc8ddc8c725d872e3e853cca7b73a9df - Using approximate topology snapshot at 0001-01-01T00:00:00.000001Z for desired timestamp 2025-10-05T21:33:35.455406Z
+2025-10-05 22:33:35,599 [canton-env-ec-39] INFO  c.d.c.s.c.SequencedEventValidatorImpl:domain=local/client=topology-manager tid:dc8ddc8c725d872e3e853cca7b73a9df - Skipping signature verification of the first sequenced event due to a fresh subscription from SEQ::local::122071c8cb3b...
+2025-10-05 22:33:35,852 [canton-env-ec-38] INFO  c.d.c.t.p.DomainTopologyTransactionMessageValidator$Impl:domain=local/client=topology-manager tid:dc8ddc8c725d872e3e853cca7b73a9df - Using approximate topology snapshot at 0001-01-01T00:00:00.000001Z for desired timestamp 2025-10-05T21:33:35.455406Z
+2025-10-05 22:33:35,903 [canton-env-ec-38] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/client=topology-manager tid:dc8ddc8c725d872e3e853cca7b73a9df - Updated topology change delay from=0s to 0.25s
+2025-10-05 22:33:35,912 [canton-env-ec-38] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/client=topology-manager tid:dc8ddc8c725d872e3e853cca7b73a9df - Storing topology transaction 1/6 Add NamespaceDelegation(122071c8cb3b..., SigningPublicKey(id = 122071c8cb3b..., format = Tink, scheme = Ed25519), true) with ts=EffectiveTime(2025-10-05T21:33:35.455406Z) (epsilon=0 ms)
+2025-10-05 22:33:35,919 [canton-env-ec-38] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/client=topology-manager tid:dc8ddc8c725d872e3e853cca7b73a9df - Storing topology transaction 2/6 Replace DomainParametersChange(
+  local::122071c8cb3b...,
+  DynamicDomainParameters(
+    participant response timeout = 30s,
+    mediator reaction timeout = 30s,
+    transfer exclusivity timeout = 1m,
+    topology change delay = 0.25s,
+    ledger time record time tolerance = 1m,
+    mediator deduplication timeout = 2m,
+    reconciliation interval = 1m,
+    max rate per participant = 1000000,
+    max request size = 10485760,
+    catchup config = CatchUpConfig(catchUpIntervalSkip = 5, nrIntervalsToTriggerCatchUp = 2)
+  )
+) with ts=EffectiveTime(2025-10-05T21:33:35.455406Z) (epsilon=0 ms)
+2025-10-05 22:33:35,919 [canton-env-ec-38] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/client=topology-manager tid:dc8ddc8c725d872e3e853cca7b73a9df - Storing topology transaction 3/6 Add OwnerToKeyMapping(DOM::local::122071c8cb3b..., SigningPublicKey(id = 12207d969171..., format = Tink, scheme = Ed25519)) with ts=EffectiveTime(2025-10-05T21:33:35.455406Z) (epsilon=0 ms)
+2025-10-05 22:33:35,922 [canton-env-ec-38] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/client=topology-manager tid:dc8ddc8c725d872e3e853cca7b73a9df - Storing topology transaction 4/6 Add OwnerToKeyMapping(MED::local::122071c8cb3b..., SigningPublicKey(id = 1220003bb010..., format = Tink, scheme = Ed25519)) with ts=EffectiveTime(2025-10-05T21:33:35.455406Z) (epsilon=0 ms)
+2025-10-05 22:33:35,922 [canton-env-ec-38] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/client=topology-manager tid:dc8ddc8c725d872e3e853cca7b73a9df - Storing topology transaction 5/6 Add MediatorDomainState(Both, local::122071c8cb3b..., MED::local::122071c8cb3b...) with ts=EffectiveTime(2025-10-05T21:33:35.455406Z) (epsilon=0 ms)
+2025-10-05 22:33:35,922 [canton-env-ec-38] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/client=topology-manager tid:dc8ddc8c725d872e3e853cca7b73a9df - Storing topology transaction 6/6 Add OwnerToKeyMapping(SEQ::local::122071c8cb3b..., SigningPublicKey(id = 12202b5552c2..., format = Tink, scheme = Ed25519)) with ts=EffectiveTime(2025-10-05T21:33:35.455406Z) (epsilon=0 ms)
+2025-10-05 22:33:36,126 [canton-env-ec-41] INFO  c.d.c.h.MutableHealthComponent:domain=local - 'domain-topology-sender' is now in state Ok(). Previous state was Not Initialized.
+2025-10-05 22:33:36,301 [canton-env-ec-38] INFO  c.d.c.s.c.SequencerClientImpl:domain=local/client=mediator - No event found up to 0001-01-01T00:00:00Z. Resubscribing from the beginning.
+2025-10-05 22:33:36,315 [canton-env-ec-38] INFO  c.d.c.s.c.SequencerClientImpl:domain=local/client=mediator - Processing events from the SequencedEventStore from 0001-01-01T00:00:00.000001Z on
+2025-10-05 22:33:36,322 [canton-env-ec-41] INFO  c.d.c.s.c.SequencerClientImpl:domain=local/client=mediator - Starting subscription for alias=SEQ::local::122071c8cb3b... at timestamp None; next counter 0
+2025-10-05 22:33:36,322 [canton-env-ec-41] INFO  c.d.c.h.DelegatingMutableHealthComponent:domain=local/client=mediator - 'sequencer-client' is now in state Ok(). Previous state was Not Initialized.
+2025-10-05 22:33:36,404 [canton-env-ec-39] INFO  c.d.c.d.s.a.MemberAuthenticationServiceOld:domain=local - MED::local::122071c8cb3b... authenticated new token with expiry 2025-10-05T22:33:36.402919Z
+2025-10-05 22:33:36,417 [canton-env-ec-58] INFO  c.d.c.d.s.s.GrpcSequencerService:domain=local - MED::local::122071c8cb3b... subscribes from counter=0
+2025-10-05 22:33:36,479 [canton-env-ec-39] INFO  c.d.c.s.c.SequencedEventValidatorImpl:domain=local/client=mediator tid:dc8ddc8c725d872e3e853cca7b73a9df - Skipping signature verification of the first sequenced event due to a fresh subscription from SEQ::local::122071c8cb3b...
+2025-10-05 22:33:36,499 [main] ERROR c.d.c.e.CommunityEnvironment tid:152c4c0226a9263fb1b0ddcb466faf7b - Failed to start sandbox: Failed to bind to address /127.0.0.1:6866
+2025-10-05 22:33:36,512 [canton-env-ec-43] INFO  c.d.c.d.m.Mediator:domain=local/node=mediator tid:dc8ddc8c725d872e3e853cca7b73a9df - Caught up with batch with counter=0 with sequencer with 1057 ms delay
+2025-10-05 22:33:36,512 [Thread-0] INFO  c.d.canton.CantonCommunityApp$ - Shutting down...
+2025-10-05 22:33:36,524 [Thread-0] INFO  c.d.c.e.CommunityEnvironment - Closing environment...
+2025-10-05 22:33:36,526 [canton-env-ec-43] INFO  c.d.c.t.p.DomainTopologyTransactionMessageValidator$Impl:domain=local/node=mediator/client=mediator tid:dc8ddc8c725d872e3e853cca7b73a9df - Using approximate topology snapshot at 0001-01-01T00:00:00.000001Z for desired timestamp 2025-10-05T21:33:35.455406Z
+2025-10-05 22:33:36,560 [canton-env-ec-41] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/node=mediator/client=mediator tid:dc8ddc8c725d872e3e853cca7b73a9df - Updated topology change delay from=0s to 0.25s
+2025-10-05 22:33:36,565 [canton-env-ec-41] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/node=mediator/client=mediator tid:dc8ddc8c725d872e3e853cca7b73a9df - Storing topology transaction 1/6 Add NamespaceDelegation(122071c8cb3b..., SigningPublicKey(id = 122071c8cb3b..., format = Tink, scheme = Ed25519), true) with ts=EffectiveTime(2025-10-05T21:33:35.455406Z) (epsilon=0 ms)
+2025-10-05 22:33:36,565 [canton-env-ec-58] INFO  c.d.c.d.DomainNodeBootstrap:domain=local - Stopping domain node
+2025-10-05 22:33:36,571 [canton-env-ec-41] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/node=mediator/client=mediator tid:dc8ddc8c725d872e3e853cca7b73a9df - Storing topology transaction 2/6 Replace DomainParametersChange(
+  local::122071c8cb3b...,
+  DynamicDomainParameters(
+    participant response timeout = 30s,
+    mediator reaction timeout = 30s,
+    transfer exclusivity timeout = 1m,
+    topology change delay = 0.25s,
+    ledger time record time tolerance = 1m,
+    mediator deduplication timeout = 2m,
+    reconciliation interval = 1m,
+    max rate per participant = 1000000,
+    max request size = 10485760,
+    catchup config = CatchUpConfig(catchUpIntervalSkip = 5, nrIntervalsToTriggerCatchUp = 2)
+  )
+) with ts=EffectiveTime(2025-10-05T21:33:35.455406Z) (epsilon=0 ms)
+2025-10-05 22:33:36,574 [canton-env-ec-41] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/node=mediator/client=mediator tid:dc8ddc8c725d872e3e853cca7b73a9df - Storing topology transaction 3/6 Add OwnerToKeyMapping(DOM::local::122071c8cb3b..., SigningPublicKey(id = 12207d969171..., format = Tink, scheme = Ed25519)) with ts=EffectiveTime(2025-10-05T21:33:35.455406Z) (epsilon=0 ms)
+2025-10-05 22:33:36,575 [canton-env-ec-41] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/node=mediator/client=mediator tid:dc8ddc8c725d872e3e853cca7b73a9df - Storing topology transaction 4/6 Add OwnerToKeyMapping(MED::local::122071c8cb3b..., SigningPublicKey(id = 1220003bb010..., format = Tink, scheme = Ed25519)) with ts=EffectiveTime(2025-10-05T21:33:35.455406Z) (epsilon=0 ms)
+2025-10-05 22:33:36,579 [canton-env-ec-41] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/node=mediator/client=mediator tid:dc8ddc8c725d872e3e853cca7b73a9df - Storing topology transaction 5/6 Add MediatorDomainState(Both, local::122071c8cb3b..., MED::local::122071c8cb3b...) with ts=EffectiveTime(2025-10-05T21:33:35.455406Z) (epsilon=0 ms)
+2025-10-05 22:33:36,581 [canton-env-ec-41] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/node=mediator/client=mediator tid:dc8ddc8c725d872e3e853cca7b73a9df - Storing topology transaction 6/6 Add OwnerToKeyMapping(SEQ::local::122071c8cb3b..., SigningPublicKey(id = 12202b5552c2..., format = Tink, scheme = Ed25519)) with ts=EffectiveTime(2025-10-05T21:33:35.455406Z) (epsilon=0 ms)
+2025-10-05 22:33:36,632 [canton-env-ec-58] INFO  c.d.c.d.t.DomainTopologySender$Impl:domain=local/identity - 'domain-topology-sender' is now in state Failed(Component is closed). Previous state was Ok().
+2025-10-05 22:33:36,636 [canton-env-ec-58] INFO  c.d.c.h.MutableHealthComponent:domain=local - 'domain-topology-sender' is now in state Failed(Component is closed). Previous state was Ok().
+2025-10-05 22:33:36,690 [canton-env-ec-58] INFO  c.d.c.s.c.ResilientSequencerSubscription:domain=local/client=topology-manager - 'sequencer-client' is now in state Failed(Disconnected from domain). Previous state was Ok().
+2025-10-05 22:33:36,693 [canton-env-ec-58] INFO  c.d.c.h.DelegatingMutableHealthComponent:domain=local/client=topology-manager - 'sequencer-client' is now in state Failed(Disconnected from domain). Previous state was Ok().
+2025-10-05 22:33:36,718 [canton-env-ec-40] INFO  c.d.c.s.c.t.GrpcSequencerSubscription:domain=local/client=topology-manager - GRPC subscription successfully closed due to client shutdown.
+2025-10-05 22:33:36,728 [canton-env-ec-43] INFO  c.d.c.n.g.ApiRequestLogger:domain=local tid:78e2a7ca8b8a138035647f6d54a3613a - Request c.d.c.d.a.v.SequencerService/SubscribeVersioned by /127.0.0.1:40127: cancelled
+2025-10-05 22:33:36,872 [canton-env-ec-58] INFO  c.d.c.s.c.ResilientSequencerSubscription:domain=local/client=mediator - 'sequencer-client' is now in state Failed(Disconnected from domain). Previous state was Ok().
+2025-10-05 22:33:36,873 [canton-env-ec-42] INFO  c.d.c.d.m.Mediator:domain=local/node=mediator tid:dc8ddc8c725d872e3e853cca7b73a9df - Not pruning the mediator deduplication store due to shutdown
+2025-10-05 22:33:36,874 [canton-env-ec-58] INFO  c.d.c.h.DelegatingMutableHealthComponent:domain=local/client=mediator - 'sequencer-client' is now in state Failed(Disconnected from domain). Previous state was Ok().
+2025-10-05 22:33:36,877 [canton-env-ec-42] INFO  c.d.c.s.c.t.GrpcSequencerSubscription:domain=local/client=mediator - GRPC subscription successfully closed due to client shutdown.
+2025-10-05 22:33:36,878 [canton-env-ec-40] INFO  c.d.c.n.g.ApiRequestLogger:domain=local tid:e9bbcb2037fb21c385f72c24f089acf9 - Request c.d.c.d.a.v.SequencerService/SubscribeVersioned by /127.0.0.1:40130: cancelled
+2025-10-05 22:33:36,903 [canton-env-ec-58] INFO  c.d.c.d.s.s.DatabaseSequencer:domain=local - 'sequencer' is now in state SequencerHealthStatus(active = false, details = Sequencer is closed). Previous state was SequencerHealthStatus(active = true).
+2025-10-05 22:33:36,905 [canton-env-ec-58] INFO  c.d.c.h.MutableHealthQuasiComponent:domain=local - 'sequencer' is now in state SequencerHealthStatus(active = false, details = Sequencer is closed). Previous state was SequencerHealthStatus(active = true).
+2025-10-05 22:33:36,906 [canton-env-ec-58] INFO  c.d.c.d.DomainNodeBootstrap:domain=local - 'sequencer-health-check-service' is now in state ServingStatus(status = 'NOT_SERVING'). Previous state was ServingStatus(status = 'SERVING').
+2025-10-05 22:33:36,928 [canton-env-ec-58] INFO  c.d.c.r.MemoryStorage:domain=local - 'memory_storage' is now in state Failed(Component is closed). Previous state was Ok().
+2025-10-05 22:33:36,932 [canton-env-ec-58] INFO  c.d.c.d.DomainNodeBootstrap:domain=local - 'domain' is now in state ServingStatus(status = 'NOT_SERVING'). Previous state was ServingStatus(status = 'SERVING').
+2025-10-05 22:33:36,934 [canton-env-ec-58] INFO  c.d.c.crypto.Crypto:domain=local - 'crypto' is now in state Failed(Component is closed). Previous state was Ok().
+2025-10-05 22:33:36,935 [canton-env-ec-58] INFO  c.d.c.c.p.t.TinkPrivateCrypto:domain=local - 'tink-private-crypto' is now in state Failed(Component is closed). Previous state was Ok().
+2025-10-05 22:33:37,003 [canton-env-ec-58] INFO  o.a.pekko.actor.CoordinatedShutdown - Running CoordinatedShutdown with reason [ActorSystemTerminateReason]
+2025-10-05 22:33:37,048 [Thread-0] INFO  c.d.canton.CantonCommunityApp$ - Shutdown complete.
+2025-10-05 22:33:37,048 [Thread-0] INFO  c.d.canton.CantonCommunityApp$ - Shutting down logger. Bye bye.
+2025-10-05 22:37:03,753 [main] INFO  c.d.canton.CantonCommunityApp$ - Starting Canton version 2.10.0
+2025-10-05 22:37:05,325 [main] INFO  c.d.canton.CantonCommunityApp$ - Starting up with resolved config:
+domains {
+    local {
+        admin-api {
+            port=6868
+        }
+        init {
+            domain-parameters {
+                protocol-version="7"
+            }
+        }
+        public-api {
+            port=6867
+        }
+        storage {
+            type=memory
+        }
+    }
+}
+parameters {
+    dev-version-support=true
+    non-standard-config=true
+    ports-file="C:\\Users\\IQRA~1.MUS\\AppData\\Local\\Temp\\extra-dir-121707912878\\sandbox-portfile"
+}
+participants {
+    sandbox {
+        admin-api {
+            port=6866
+        }
+        ledger-api {
+            port=6866
+            user-management-service {
+                enabled=true
+            }
+        }
+        parameters {
+            dev-version-support=true
+        }
+        storage {
+            type=memory
+        }
+    }
+}
+
+2025-10-05 22:37:05,350 [main] INFO  c.d.c.e.CommunityEnvironment - Deriving 8 as number of threads from 'sys.runtime.availableProcessors()'. Please use '-Dscala.concurrent.context.numThreads' to override.
+2025-10-05 22:37:05,741 [canton-env-ec-36] INFO  o.a.pekko.event.slf4j.Slf4jLogger - Slf4jLogger started
+2025-10-05 22:37:05,844 [main] INFO  c.d.c.t.OpenTelemetryFactory$ - Initializing open telemetry with Exporter.Disabled
+2025-10-05 22:37:05,946 [main] INFO  c.d.c.e.CommunityEnvironment tid:c86804c29571c9bbb254f83f782b1958 - Automatically starting all instances
+2025-10-05 22:37:06,501 [canton-env-ec-39] INFO  c.d.c.crypto.Crypto:domain=local - 'crypto' is now in state Ok(). Previous state was Not Initialized.
+2025-10-05 22:37:06,510 [canton-env-ec-36] INFO  c.d.c.d.DomainNodeBootstrap:domain=local - Starting admin-api services on CommunityAdminServerConfig(127.0.0.1,Some(6868),None,Some(BasicKeepAliveServerConfig(40s,20s,20s,false)),10485760)
+2025-10-05 22:37:06,662 [canton-env-ec-39] INFO  c.d.c.c.Crypto:participant=sandbox - 'crypto' is now in state Ok(). Previous state was Not Initialized.
+2025-10-05 22:37:06,662 [canton-env-ec-37] INFO  c.d.c.p.ParticipantNodeBootstrap:participant=sandbox - Starting admin-api services on CommunityAdminServerConfig(127.0.0.1,Some(6866),None,Some(BasicKeepAliveServerConfig(40s,20s,20s,false)),10485760)
+2025-10-05 22:37:07,552 [canton-env-ec-36] INFO  c.d.c.d.DomainNodeBootstrap:domain=local - 'domain' is now in state ServingStatus(status = 'SERVING'). Previous state was ServingStatus(status = 'NOT_SERVING').
+2025-10-05 22:37:07,752 [canton-env-ec-37] INFO  c.d.c.d.DomainNodeBootstrap:domain=local - Node is not initialized yet. Performing automated default initialization.
+2025-10-05 22:37:08,447 [canton-env-ec-39] INFO  c.d.c.d.t.DomainTopologyManager:domain=local tid:ad009b47a163ce06483b57533c2a6ff2 - Applied topology transaction Add NamespaceDelegation(1220cbe2537a..., SigningPublicKey(id = 1220cbe2537a..., format = Tink, scheme = Ed25519), true) at 2025-10-05T21:37:08.441202Z
+2025-10-05 22:37:08,521 [canton-env-ec-38] INFO  c.d.c.d.t.DomainTopologyManager:domain=local tid:ad009b47a163ce06483b57533c2a6ff2 - Applied topology transaction Replace DomainParametersChange(
+  local::1220cbe2537a...,
+  DynamicDomainParameters(
+    participant response timeout = 30s,
+    mediator reaction timeout = 30s,
+    transfer exclusivity timeout = 1m,
+    topology change delay = 0.25s,
+    ledger time record time tolerance = 1m,
+    mediator deduplication timeout = 2m,
+    reconciliation interval = 1m,
+    max rate per participant = 1000000,
+    max request size = 10485760,
+    catchup config = CatchUpConfig(catchUpIntervalSkip = 5, nrIntervalsToTriggerCatchUp = 2)
+  )
+) at 2025-10-05T21:37:08.519366Z
+2025-10-05 22:37:08,546 [canton-env-ec-44] INFO  c.d.c.d.t.DomainTopologyManager:domain=local tid:ad009b47a163ce06483b57533c2a6ff2 - Applied topology transaction Add OwnerToKeyMapping(DOM::local::1220cbe2537a..., SigningPublicKey(id = 1220d70ff09b..., format = Tink, scheme = Ed25519)) at 2025-10-05T21:37:08.544094Z
+2025-10-05 22:37:08,568 [canton-env-ec-44] INFO  c.d.c.d.t.DomainTopologyManager:domain=local - Applied topology transaction Add OwnerToKeyMapping(MED::local::1220cbe2537a..., SigningPublicKey(id = 122076bbdf3c..., format = Tink, scheme = Ed25519)) at 2025-10-05T21:37:08.566811Z
+2025-10-05 22:37:08,595 [canton-env-ec-38] INFO  c.d.c.d.t.DomainTopologyManager:domain=local - Applied topology transaction Add MediatorDomainState(Both, local::1220cbe2537a..., MED::local::1220cbe2537a...) at 2025-10-05T21:37:08.593956Z
+2025-10-05 22:37:08,621 [canton-env-ec-43] INFO  c.d.c.d.t.DomainTopologyManager:domain=local - Applied topology transaction Add OwnerToKeyMapping(SEQ::local::1220cbe2537a..., SigningPublicKey(id = 1220d9da21cc..., format = Tink, scheme = Ed25519)) at 2025-10-05T21:37:08.620064Z
+2025-10-05 22:37:08,623 [canton-env-ec-46] INFO  c.d.c.d.DomainNodeBootstrap:domain=local - Initializing node with id NodeId(local::1220cbe2537a...)
+2025-10-05 22:37:09,023 [canton-env-ec-44] INFO  c.d.c.d.s.SequencerRuntime:domain=local - Sequencer is healthy
+2025-10-05 22:37:09,084 [canton-env-ec-39] INFO  c.d.c.h.MutableHealthQuasiComponent:domain=local - 'sequencer' is now in state SequencerHealthStatus(active = true). Previous state was SequencerHealthStatus(active = false).
+2025-10-05 22:37:09,084 [canton-env-ec-39] INFO  c.d.c.d.DomainNodeBootstrap:domain=local - 'sequencer-health-check-service' is now in state ServingStatus(status = 'SERVING'). Previous state was ServingStatus(status = 'NOT_SERVING').
+2025-10-05 22:37:09,680 [canton-env-ec-47] INFO  c.d.c.s.c.SequencerClientImpl:domain=local/client=topology-manager - No event found up to 0001-01-01T00:00:00Z. Resubscribing from the beginning.
+2025-10-05 22:37:09,687 [canton-env-ec-47] INFO  c.d.c.s.c.SequencerClientImpl:domain=local/client=topology-manager - Processing events from the SequencedEventStore from 0001-01-01T00:00:00.000001Z on
+2025-10-05 22:37:09,747 [canton-env-ec-37] INFO  c.d.c.s.c.SequencerClientImpl:domain=local/client=topology-manager - Starting subscription for alias=SEQ::local::1220cbe2537a... at timestamp None; next counter 0
+2025-10-05 22:37:09,762 [canton-env-ec-37] INFO  c.d.c.h.DelegatingMutableHealthComponent:domain=local/client=topology-manager - 'sequencer-client' is now in state Ok(). Previous state was Not Initialized.
+2025-10-05 22:37:09,844 [canton-env-ec-38] INFO  c.d.c.d.i.TopologyManagementInitialization$:domain=local - Sending initial topology transactions to domain members Set(DOM::local::1220cbe2537a..., MED::local::1220cbe2537a...) as DOM::local::1220cbe2537a...
+2025-10-05 22:37:09,916 [canton-env-ec-36] INFO  c.d.c.d.s.a.MemberAuthenticationServiceOld:domain=local - DOM::local::1220cbe2537a... authenticated new token with expiry 2025-10-05T22:37:09.913786Z
+2025-10-05 22:37:10,021 [canton-env-ec-37] INFO  c.d.c.d.s.s.GrpcSequencerService:domain=local - DOM::local::1220cbe2537a... subscribes from counter=0
+2025-10-05 22:37:10,202 [canton-env-ec-36] INFO  c.d.c.d.s.s.GrpcSequencerService:domain=local tid:71e2351dabc32ae4482dd7e5cbc1d851 - 'DOM::local::1220cbe2537a...' sends request with id '6369c147-d0b5-46f8-a068-e5f5e79b12a4' of size 1787 bytes with 2 envelopes.
+2025-10-05 22:37:10,306 [canton-env-ec-39] INFO  c.d.c.d.s.s.SequencerReader$EventsReader:domain=local/subscriber=DOM::local::1220cbe2537a tid:71e2351dabc32ae4482dd7e5cbc1d851 - Using approximate topology snapshot at 0001-01-01T00:00:00.000001Z for desired timestamp 2025-10-05T21:37:10.274958Z
+2025-10-05 22:37:10,378 [canton-env-ec-37] INFO  c.d.c.s.c.SequencedEventValidatorImpl:domain=local/client=topology-manager tid:71e2351dabc32ae4482dd7e5cbc1d851 - Skipping signature verification of the first sequenced event due to a fresh subscription from SEQ::local::1220cbe2537a...
+2025-10-05 22:37:10,534 [canton-env-ec-44] INFO  c.d.c.t.p.DomainTopologyTransactionMessageValidator$Impl:domain=local/client=topology-manager tid:71e2351dabc32ae4482dd7e5cbc1d851 - Using approximate topology snapshot at 0001-01-01T00:00:00.000001Z for desired timestamp 2025-10-05T21:37:10.274958Z
+2025-10-05 22:37:10,559 [canton-env-ec-36] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/client=topology-manager tid:71e2351dabc32ae4482dd7e5cbc1d851 - Updated topology change delay from=0s to 0.25s
+2025-10-05 22:37:10,564 [canton-env-ec-37] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/client=topology-manager tid:71e2351dabc32ae4482dd7e5cbc1d851 - Storing topology transaction 1/6 Add NamespaceDelegation(1220cbe2537a..., SigningPublicKey(id = 1220cbe2537a..., format = Tink, scheme = Ed25519), true) with ts=EffectiveTime(2025-10-05T21:37:10.274958Z) (epsilon=0 ms)
+2025-10-05 22:37:10,564 [canton-env-ec-37] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/client=topology-manager tid:71e2351dabc32ae4482dd7e5cbc1d851 - Storing topology transaction 2/6 Replace DomainParametersChange(
+  local::1220cbe2537a...,
+  DynamicDomainParameters(
+    participant response timeout = 30s,
+    mediator reaction timeout = 30s,
+    transfer exclusivity timeout = 1m,
+    topology change delay = 0.25s,
+    ledger time record time tolerance = 1m,
+    mediator deduplication timeout = 2m,
+    reconciliation interval = 1m,
+    max rate per participant = 1000000,
+    max request size = 10485760,
+    catchup config = CatchUpConfig(catchUpIntervalSkip = 5, nrIntervalsToTriggerCatchUp = 2)
+  )
+) with ts=EffectiveTime(2025-10-05T21:37:10.274958Z) (epsilon=0 ms)
+2025-10-05 22:37:10,567 [canton-env-ec-37] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/client=topology-manager tid:71e2351dabc32ae4482dd7e5cbc1d851 - Storing topology transaction 3/6 Add OwnerToKeyMapping(DOM::local::1220cbe2537a..., SigningPublicKey(id = 1220d70ff09b..., format = Tink, scheme = Ed25519)) with ts=EffectiveTime(2025-10-05T21:37:10.274958Z) (epsilon=0 ms)
+2025-10-05 22:37:10,567 [canton-env-ec-37] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/client=topology-manager tid:71e2351dabc32ae4482dd7e5cbc1d851 - Storing topology transaction 4/6 Add OwnerToKeyMapping(MED::local::1220cbe2537a..., SigningPublicKey(id = 122076bbdf3c..., format = Tink, scheme = Ed25519)) with ts=EffectiveTime(2025-10-05T21:37:10.274958Z) (epsilon=0 ms)
+2025-10-05 22:37:10,567 [canton-env-ec-37] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/client=topology-manager tid:71e2351dabc32ae4482dd7e5cbc1d851 - Storing topology transaction 5/6 Add MediatorDomainState(Both, local::1220cbe2537a..., MED::local::1220cbe2537a...) with ts=EffectiveTime(2025-10-05T21:37:10.274958Z) (epsilon=0 ms)
+2025-10-05 22:37:10,567 [canton-env-ec-37] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/client=topology-manager tid:71e2351dabc32ae4482dd7e5cbc1d851 - Storing topology transaction 6/6 Add OwnerToKeyMapping(SEQ::local::1220cbe2537a..., SigningPublicKey(id = 1220d9da21cc..., format = Tink, scheme = Ed25519)) with ts=EffectiveTime(2025-10-05T21:37:10.274958Z) (epsilon=0 ms)
+2025-10-05 22:37:10,709 [canton-env-ec-38] INFO  c.d.c.h.MutableHealthComponent:domain=local - 'domain-topology-sender' is now in state Ok(). Previous state was Not Initialized.
+2025-10-05 22:37:10,889 [canton-env-ec-39] INFO  c.d.c.s.c.SequencerClientImpl:domain=local/client=mediator - No event found up to 0001-01-01T00:00:00Z. Resubscribing from the beginning.
+2025-10-05 22:37:10,889 [canton-env-ec-39] INFO  c.d.c.s.c.SequencerClientImpl:domain=local/client=mediator - Processing events from the SequencedEventStore from 0001-01-01T00:00:00.000001Z on
+2025-10-05 22:37:10,893 [canton-env-ec-39] INFO  c.d.c.s.c.SequencerClientImpl:domain=local/client=mediator - Starting subscription for alias=SEQ::local::1220cbe2537a... at timestamp None; next counter 0
+2025-10-05 22:37:10,895 [canton-env-ec-39] INFO  c.d.c.h.DelegatingMutableHealthComponent:domain=local/client=mediator - 'sequencer-client' is now in state Ok(). Previous state was Not Initialized.
+2025-10-05 22:37:10,930 [canton-env-ec-38] INFO  c.d.c.d.s.a.MemberAuthenticationServiceOld:domain=local - MED::local::1220cbe2537a... authenticated new token with expiry 2025-10-05T22:37:10.930632Z
+2025-10-05 22:37:10,944 [canton-env-ec-37] INFO  c.d.c.d.s.s.GrpcSequencerService:domain=local - MED::local::1220cbe2537a... subscribes from counter=0
+2025-10-05 22:37:10,983 [main] ERROR c.d.c.e.CommunityEnvironment tid:c86804c29571c9bbb254f83f782b1958 - Failed to start sandbox: Failed to bind to address /127.0.0.1:6866
+2025-10-05 22:37:10,984 [canton-env-ec-36] INFO  c.d.c.s.c.SequencedEventValidatorImpl:domain=local/client=mediator tid:71e2351dabc32ae4482dd7e5cbc1d851 - Skipping signature verification of the first sequenced event due to a fresh subscription from SEQ::local::1220cbe2537a...
+2025-10-05 22:37:10,988 [Thread-0] INFO  c.d.canton.CantonCommunityApp$ - Shutting down...
+2025-10-05 22:37:10,993 [Thread-0] INFO  c.d.c.e.CommunityEnvironment - Closing environment...
+2025-10-05 22:37:11,005 [canton-env-ec-36] INFO  c.d.c.d.DomainNodeBootstrap:domain=local - Stopping domain node
+2025-10-05 22:37:11,005 [canton-env-ec-37] INFO  c.d.c.d.m.Mediator:domain=local/node=mediator tid:71e2351dabc32ae4482dd7e5cbc1d851 - Caught up with batch with counter=0 with sequencer with 731 ms delay
+2025-10-05 22:37:11,007 [canton-env-ec-37] INFO  c.d.c.t.p.DomainTopologyTransactionMessageValidator$Impl:domain=local/node=mediator/client=mediator tid:71e2351dabc32ae4482dd7e5cbc1d851 - Using approximate topology snapshot at 0001-01-01T00:00:00.000001Z for desired timestamp 2025-10-05T21:37:10.274958Z
+2025-10-05 22:37:11,024 [canton-env-ec-39] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/node=mediator/client=mediator tid:71e2351dabc32ae4482dd7e5cbc1d851 - Updated topology change delay from=0s to 0.25s
+2025-10-05 22:37:11,026 [canton-env-ec-39] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/node=mediator/client=mediator tid:71e2351dabc32ae4482dd7e5cbc1d851 - Storing topology transaction 1/6 Add NamespaceDelegation(1220cbe2537a..., SigningPublicKey(id = 1220cbe2537a..., format = Tink, scheme = Ed25519), true) with ts=EffectiveTime(2025-10-05T21:37:10.274958Z) (epsilon=0 ms)
+2025-10-05 22:37:11,030 [canton-env-ec-39] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/node=mediator/client=mediator tid:71e2351dabc32ae4482dd7e5cbc1d851 - Storing topology transaction 2/6 Replace DomainParametersChange(
+  local::1220cbe2537a...,
+  DynamicDomainParameters(
+    participant response timeout = 30s,
+    mediator reaction timeout = 30s,
+    transfer exclusivity timeout = 1m,
+    topology change delay = 0.25s,
+    ledger time record time tolerance = 1m,
+    mediator deduplication timeout = 2m,
+    reconciliation interval = 1m,
+    max rate per participant = 1000000,
+    max request size = 10485760,
+    catchup config = CatchUpConfig(catchUpIntervalSkip = 5, nrIntervalsToTriggerCatchUp = 2)
+  )
+) with ts=EffectiveTime(2025-10-05T21:37:10.274958Z) (epsilon=0 ms)
+2025-10-05 22:37:11,031 [canton-env-ec-39] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/node=mediator/client=mediator tid:71e2351dabc32ae4482dd7e5cbc1d851 - Storing topology transaction 3/6 Add OwnerToKeyMapping(DOM::local::1220cbe2537a..., SigningPublicKey(id = 1220d70ff09b..., format = Tink, scheme = Ed25519)) with ts=EffectiveTime(2025-10-05T21:37:10.274958Z) (epsilon=0 ms)
+2025-10-05 22:37:11,033 [canton-env-ec-39] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/node=mediator/client=mediator tid:71e2351dabc32ae4482dd7e5cbc1d851 - Storing topology transaction 4/6 Add OwnerToKeyMapping(MED::local::1220cbe2537a..., SigningPublicKey(id = 122076bbdf3c..., format = Tink, scheme = Ed25519)) with ts=EffectiveTime(2025-10-05T21:37:10.274958Z) (epsilon=0 ms)
+2025-10-05 22:37:11,034 [canton-env-ec-39] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/node=mediator/client=mediator tid:71e2351dabc32ae4482dd7e5cbc1d851 - Storing topology transaction 5/6 Add MediatorDomainState(Both, local::1220cbe2537a..., MED::local::1220cbe2537a...) with ts=EffectiveTime(2025-10-05T21:37:10.274958Z) (epsilon=0 ms)
+2025-10-05 22:37:11,037 [canton-env-ec-39] INFO  c.d.c.t.p.TopologyTransactionProcessor:domain=local/node=mediator/client=mediator tid:71e2351dabc32ae4482dd7e5cbc1d851 - Storing topology transaction 6/6 Add OwnerToKeyMapping(SEQ::local::1220cbe2537a..., SigningPublicKey(id = 1220d9da21cc..., format = Tink, scheme = Ed25519)) with ts=EffectiveTime(2025-10-05T21:37:10.274958Z) (epsilon=0 ms)
+2025-10-05 22:37:11,053 [canton-env-ec-36] INFO  c.d.c.d.t.DomainTopologySender$Impl:domain=local/identity - 'domain-topology-sender' is now in state Failed(Component is closed). Previous state was Ok().
+2025-10-05 22:37:11,054 [canton-env-ec-36] INFO  c.d.c.h.MutableHealthComponent:domain=local - 'domain-topology-sender' is now in state Failed(Component is closed). Previous state was Ok().
+2025-10-05 22:37:11,075 [canton-env-ec-36] INFO  c.d.c.s.c.ResilientSequencerSubscription:domain=local/client=topology-manager - 'sequencer-client' is now in state Failed(Disconnected from domain). Previous state was Ok().
+2025-10-05 22:37:11,075 [canton-env-ec-36] INFO  c.d.c.h.DelegatingMutableHealthComponent:domain=local/client=topology-manager - 'sequencer-client' is now in state Failed(Disconnected from domain). Previous state was Ok().
+2025-10-05 22:37:11,084 [canton-env-ec-37] INFO  c.d.c.s.c.t.GrpcSequencerSubscription:domain=local/client=topology-manager - GRPC subscription successfully closed due to client shutdown.
+2025-10-05 22:37:11,087 [canton-env-ec-37] INFO  c.d.c.n.g.ApiRequestLogger:domain=local tid:458a5ae9b1988649919add554835b5f1 - Request c.d.c.d.a.v.SequencerService/SubscribeVersioned by /127.0.0.1:2560: cancelled
+2025-10-05 22:37:11,141 [canton-env-ec-47] INFO  c.d.c.d.m.Mediator:domain=local/node=mediator tid:71e2351dabc32ae4482dd7e5cbc1d851 - Not pruning the mediator deduplication store due to shutdown
+2025-10-05 22:37:11,141 [canton-env-ec-36] INFO  c.d.c.s.c.ResilientSequencerSubscription:domain=local/client=mediator - 'sequencer-client' is now in state Failed(Disconnected from domain). Previous state was Ok().
+2025-10-05 22:37:11,143 [canton-env-ec-36] INFO  c.d.c.h.DelegatingMutableHealthComponent:domain=local/client=mediator - 'sequencer-client' is now in state Failed(Disconnected from domain). Previous state was Ok().
+2025-10-05 22:37:11,145 [canton-env-ec-39] INFO  c.d.c.s.c.t.GrpcSequencerSubscription:domain=local/client=mediator - GRPC subscription successfully closed due to client shutdown.
+2025-10-05 22:37:11,145 [canton-env-ec-46] INFO  c.d.c.n.g.ApiRequestLogger:domain=local tid:20f8f31a17bfc450d096b9b72b065b0d - Request c.d.c.d.a.v.SequencerService/SubscribeVersioned by /127.0.0.1:2564: cancelled
+2025-10-05 22:37:11,153 [canton-env-ec-36] INFO  c.d.c.d.s.s.DatabaseSequencer:domain=local - 'sequencer' is now in state SequencerHealthStatus(active = false, details = Sequencer is closed). Previous state was SequencerHealthStatus(active = true).
+2025-10-05 22:37:11,153 [canton-env-ec-36] INFO  c.d.c.h.MutableHealthQuasiComponent:domain=local - 'sequencer' is now in state SequencerHealthStatus(active = false, details = Sequencer is closed). Previous state was SequencerHealthStatus(active = true).
+2025-10-05 22:37:11,155 [canton-env-ec-36] INFO  c.d.c.d.DomainNodeBootstrap:domain=local - 'sequencer-health-check-service' is now in state ServingStatus(status = 'NOT_SERVING'). Previous state was ServingStatus(status = 'SERVING').
+2025-10-05 22:37:11,167 [canton-env-ec-36] INFO  c.d.c.r.MemoryStorage:domain=local - 'memory_storage' is now in state Failed(Component is closed). Previous state was Ok().
+2025-10-05 22:37:11,167 [canton-env-ec-36] INFO  c.d.c.d.DomainNodeBootstrap:domain=local - 'domain' is now in state ServingStatus(status = 'NOT_SERVING'). Previous state was ServingStatus(status = 'SERVING').
+2025-10-05 22:37:11,169 [canton-env-ec-36] INFO  c.d.c.crypto.Crypto:domain=local - 'crypto' is now in state Failed(Component is closed). Previous state was Ok().
+2025-10-05 22:37:11,169 [canton-env-ec-36] INFO  c.d.c.c.p.t.TinkPrivateCrypto:domain=local - 'tink-private-crypto' is now in state Failed(Component is closed). Previous state was Ok().
+2025-10-05 22:37:11,200 [canton-env-ec-37] INFO  o.a.pekko.actor.CoordinatedShutdown - Running CoordinatedShutdown with reason [ActorSystemTerminateReason]
+2025-10-05 22:37:11,246 [Thread-0] INFO  c.d.canton.CantonCommunityApp$ - Shutdown complete.
+2025-10-05 22:37:11,246 [Thread-0] INFO  c.d.canton.CantonCommunityApp$ - Shutting down logger. Bye bye.

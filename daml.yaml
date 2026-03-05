@@ -1,0 +1,17 @@
+sdk-version: 2.10.0
+name: test
+version: 0.0.1
+source: daml
+
+dependencies:
+  - daml-prim
+  - daml-stdlib
+  - daml-script
+
+scripts:
+  setup: Main:setup
+  log-time: LogTime:logTimeScript
+  run-all: RunAll:runAll
+  test-log: TestLog:testLog
+
+start-navigator: true

@@ -1,0 +1,49 @@
+wsl --install -d Ubuntu
+wsl --status
+wsl -l -v
+
+
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y python3 python3-venv python3-pip curl git unzip build-essential
+python3 --version
+
+cd /mnt/c/Users/mustafai/Desktop/SCOPE-Framework-main/SCOPE-Framework-main
+ls
+
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
+
+# REQUIRED for your Flask API:
+python -m pip install flask flask-caching flask-compress requests cryptography werkzeug
+
+python -m pip install oqs
+python -c "import flask,requests,cryptography,werkzeug; print('deps OK')"
+
+
+
+@"
+[wsl2]
+networkingMode=mirrored
+dnsTunneling=true
+autoProxy=true
+"@ | Set-Content -Encoding ASCII "$env:USERPROFILE\.wslconfig"
+
+wsl --shutdown
+
+# 1) define token path (THIS was missing)
+TOK="/mnt/c/Users/mustafai/Desktop/SCOPE-Framework-main/SCOPE-Framework-main/bootstrap.jwt"
+ls -l "$TOK"   # must show the file
+
+# 2) get Windows host IP as seen by WSL (nameserver is usually Windows)
+WIN_HOST=$(awk '/nameserver/ {print $2; exit}' /etc/resolv.conf)
+echo "WIN_HOST=$WIN_HOST"
+
+# 3) test JSON-API from WSL to Windows
+curl -i -H "Authorization: Bearer $(tr -d '\r\n' < "$TOK")" \
+  "http://$WIN_HOST:7576/v1/packages"
+
+
+TOK="/mnt/c/Users/mustafai/Desktop/SCOPE-Framework-main/SCOPE-Framework-main/bootstrap.jwt"
+curl -i -H "Authorization: Bearer $(tr -d '\r\n' < "$TOK")" \
+  "http://localhost:7576/v1/packages"

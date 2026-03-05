@@ -1,0 +1,603 @@
+module RunAll where
+
+import Daml.Script
+import DA.Foldable as Foldable
+import DA.Time (addRelTime, seconds)
+import DA.List as List (sort)
+import DA.Text as T
+import qualified Main as M
+
+-- ==========================================================
+-- Small script helpers
+-- ==========================================================
+
+mapScript_ : (a -> Script ()) -> [a] -> Script ()
+mapScript_ _ []        = pure ()
+mapScript_ f (x :: xs) = do f x; mapScript_ f xs
+
+latestSnapshot
+  : [(ContractId M.TaSnapshot, M.TaSnapshot)]
+  -> (ContractId M.TaSnapshot, M.TaSnapshot)
+latestSnapshot xs = case xs of
+  x :: rest ->
+    Foldable.foldl
+      (\best cur -> if (snd cur).epoch > (snd best).epoch then cur else best)
+      x rest
+  [] -> error "No TaSnapshot found"
+
+-- ==========================================================
+-- Base64 normalization helpers
+-- ==========================================================
+
+normalizeB64 : Text -> Text
+normalizeB64 t =
+  let t1 = T.replace "\r" "" t
+      t2 = T.replace "\n" "" t1
+      t3 = T.replace "\t" "" t2
+      t4 = T.replace " "  "" t3
+  in t4
+
+stripB64Padding : Text -> Text
+stripB64Padding t = T.dropWhileEnd (\c -> c == "=") (normalizeB64 t)
+
+-- ==========================================================
+-- Attestation helpers
+-- ==========================================================
+
+bestByExpires
+  : [(ContractId M.SigAttestation, M.SigAttestation)]
+  -> Optional (ContractId M.SigAttestation, M.SigAttestation)
+bestByExpires xs = case xs of
+  [] -> None
+  x :: rest ->
+    Some $
+      Foldable.foldl
+        (\best cur -> if (snd cur).expires > (snd best).expires then cur else best)
+        x rest
+
+findOrCreateAttestation
+  : Party -> Party -> Text -> Text -> Party -> Text -> M.AlgId -> Time -> Time
+  -> Script (ContractId M.SigAttestation)
+findOrCreateAttestation op issuer digest devicePk deviceOwner senderPubHex algId now expT = do
+  atts <- query @M.SigAttestation op
+
+  let matches =
+        [ (cid, a)
+        | (cid, a) <- atts
+        , a.operator        == op
+        , a.issuer          == issuer
+        , a.digest          == digest
+        , a.devicePublicKey == devicePk
+        , a.deviceOwner     == deviceOwner
+        , a.senderPublicKey == senderPubHex
+        , a.algId           == algId
+        ]
+
+  case bestByExpires matches of
+    Some (cid, a) -> do
+      if a.expires < now then do
+        debug ("[RunAll] SigAttestation expired; archiving+recreating key=("
+              <> show a.operator <> "," <> show a.digest <> "," <> show a.issuer <> ")"
+              <> " expires=" <> show a.expires <> " now=" <> show now)
+
+        submit issuer do
+          exerciseCmd cid Archive
+
+        debug ("[RunAll] Creating fresh SigAttestation from " <> show issuer)
+        newCid <- submit issuer do
+          createCmd M.SigAttestation with
+            operator        = op
+            issuer          = issuer
+            digest          = digest
+            deviceOwner     = deviceOwner
+            devicePublicKey = devicePk
+            senderPublicKey = senderPubHex
+            algId           = algId
+            ts              = now
+            expires         = expT
+        pure newCid
+      else do
+        debug ("[RunAll] Reusing SigAttestation key=("
+              <> show a.operator <> "," <> show a.digest <> "," <> show a.issuer <> ")"
+              <> " expires=" <> show a.expires)
+        pure cid
+
+    None -> do
+      debug ("[RunAll] Creating SigAttestation from " <> show issuer)
+      cid <- submit issuer do
+        createCmd M.SigAttestation with
+          operator        = op
+          issuer          = issuer
+          digest          = digest
+          deviceOwner     = deviceOwner
+          devicePublicKey = devicePk
+          senderPublicKey = senderPubHex
+          algId           = algId
+          ts              = now
+          expires         = expT
+      pure cid
+
+-- ==========================================================
+-- Broker helpers
+-- ==========================================================
+
+findBrokerFor
+  : Party -> Party
+  -> Script (ContractId M.BrokerContract, M.BrokerContract, Party)
+findBrokerFor who op = do
+  bcsWho <- query @M.BrokerContract who
+  case bcsWho of
+    (cid, bc) :: _ -> pure (cid, bc, who)
+    [] -> do
+      bcsOp <- query @M.BrokerContract op
+      case bcsOp of
+        (cid, bc) :: _ -> do
+          debug "[RunAll] BrokerContract not visible to submitter; using one seen by Operator."
+          pure (cid, bc, who)
+        [] -> abort "No BrokerContract found. Did Main.setup run?"
+
+getBrokerByCid : Party -> ContractId M.BrokerContract -> Script M.BrokerContract
+getBrokerByCid op cidWanted = do
+  xs <- query @M.BrokerContract op
+  case [ b | (cid, b) <- xs, cid == cidWanted ] of
+    b :: _ -> pure b
+    []     -> abort "[RunAll] Could not query BrokerContract by CID"
+
+-- Refresh cache only if needed; returns possibly-new (cid, bc)
+ensureFreshCache
+  : Party -> Party
+  -> (ContractId M.BrokerContract, M.BrokerContract)
+  -> Script (ContractId M.BrokerContract, M.BrokerContract)
+ensureFreshCache edge op (bcCid, bc) = do
+  now <- getTime
+  let edgeCached = Foldable.elem edge [ p | (p, _) <- bc.cachedValidNodes ]
+  if now <= bc.validUntil && edgeCached then do
+    pure (bcCid, bc)
+  else do
+    debug "[RunAll] Broker cache expired or missing edge; calling RefreshCache..."
+    let newValidUntil = addRelTime now (seconds 3600)
+        newCached     = bc.edgeNodes
+
+    newCid <- submit op do
+      exerciseCmd bcCid (M.RefreshCache with
+        newValidUntil = newValidUntil
+        newCached     = newCached)
+
+    newBc <- getBrokerByCid op newCid
+    debug "[RunAll] Cache refreshed (new BrokerContract CID)."
+    pure (newCid, newBc)
+
+-- ==========================================================
+-- Ratchet helpers (NEXT counter)
+-- ==========================================================
+
+findRatchetState
+  : Party -> Party -> Text -> Text -> Int
+  -> Script (Optional (ContractId M.RatchetState, M.RatchetState))
+findRatchetState op edge deviceKey senderId epoch = do
+  rs <- query @M.RatchetState op
+  let matches =
+        [ (cid, r)
+        | (cid, r) <- rs
+        , r.operator == op
+        , r.edge     == edge
+        , r.deviceKey == deviceKey
+        , r.senderId == senderId
+        , r.epoch    == epoch
+        ]
+  case matches of
+    [] -> pure None
+    x :: rest -> do
+      let best =
+            Foldable.foldl
+              (\best cur -> if (snd cur).lastCtr > (snd best).lastCtr then cur else best)
+              x rest
+      pure (Some best)
+
+nextCounterFor : Party -> Party -> Text -> Text -> Int -> Script Int
+nextCounterFor op edge deviceKey senderId epoch = do
+  m <- findRatchetState op edge deviceKey senderId epoch
+  case m of
+    None -> pure 1
+    Some (_cid, r) -> pure (r.lastCtr + 1)
+
+-- ==========================================================
+-- ZK-PAC helpers
+-- ==========================================================
+
+ensurePolicyRoot : Party -> Text -> Text -> Script (ContractId M.PolicyRoot)
+ensurePolicyRoot op policyId merkleRoot = do
+  roots <- query @M.PolicyRoot op
+  let existing =
+        [ (cid,r) | (cid,r) <- roots, r.policyId == policyId, r.merkleRoot == merkleRoot ]
+  case existing of
+    (cid, _) :: _ -> debug "[RunAll][ZK-PAC] PolicyRoot already exists" >> pure cid
+    [] -> do
+      debug "[RunAll][ZK-PAC] Creating PolicyRoot"
+      submit op do
+        createCmd M.PolicyRoot with operator = op, policyId, merkleRoot
+
+mkDemoPolicyProof : Text -> [Text] -> M.PolicyProof
+mkDemoPolicyProof policyId revealedAttrs =
+  let rah = M.computeRevealedAttrsHash revealedAttrs
+  in M.PolicyProof with
+      policyId          = policyId
+      leafHash          = "leaf-hash-demo"
+      merklePath        = []
+      revealedAttrs     = revealedAttrs
+      revealedAttrsHash = rah
+      vkId              = M.zkVkIdDemo
+      proofB64          = "ZHVtbXk="
+
+ensurePolicyLeaf : Party -> Text -> Text -> [Text] -> Script ()
+ensurePolicyLeaf op policyId leafHash allowedAttrs = do
+  xs <- query @M.PolicyLeaf op
+  let exists =
+        case [ () | (_,l) <- xs, l.policyId == policyId && l.leafHash == leafHash ] of
+          _ :: _ -> True
+          []     -> False
+  case exists of
+    True  -> debug "[RunAll][ZK-PAC] PolicyLeaf exists"
+    False -> do
+      _ <- submit op do
+        createCmd M.PolicyLeaf with operator = op, policyId, leafHash, allowedAttrs
+      debug "[RunAll][ZK-PAC] PolicyLeaf created"
+
+-- ==========================================================
+-- Core helper: refresh cache + next counter + hybrid fields
+-- ==========================================================
+
+verifyAndRelayIfNeeded
+  : Party -> Party -> Party -> Text -> M.AlgId -> Bool -> Optional M.PolicyProof
+  -> (ContractId M.BrokerContract, M.BrokerContract)
+  -> (ContractId M.Device, M.Device)
+  -> Text -> Time -> Int -> Text -> Text -> Text -> Text
+  -> [ContractId M.SigAttestation]
+  -> Script ()
+verifyAndRelayIfNeeded edge op sp senderId algId useZkPac policyProof
+                       (bcCid0, bc0) (devCid, dev)
+                       digest now epoch merkleRoot spSigB64 senderPubHex spEd25519PubHex attCids = do
+
+  (bcCid, _bc) <- ensureFreshCache edge op (bcCid0, bc0)
+
+  ctr <- nextCounterFor op edge dev.publicKey senderId epoch
+
+  logs <- query @M.RelayLog op
+  let already =
+        [ ()
+        | (_cid, r) <- logs
+        , r.deviceKey == dev.publicKey
+        , r.epoch     == epoch
+        , r.senderId  == senderId
+        , r.counter   == ctr
+        ]
+  case already of
+    _ :: _ ->
+      debug ("[RunAll] RelayLog already exists for counter=" <> show ctr <> "; skipping VerifyAndRelay.")
+    [] -> do
+      case dev.pqPubKey of
+        None -> debug "[RunAll] Device pqPubKey=None"
+        Some k ->
+          debug ("[RunAll] Device pqPubKey normalized+trimmed length="
+                 <> show (T.length (stripB64Padding k)))
+
+      let (pqSigOpt, pqPubOpt, kyberCtOpt) =
+            case (algId, dev.pqPubKey) of
+              (M.ALG_HYBRID_X25519_KYBER_AESGCM_HYBRID_SIG, Some devPq) ->
+                ( Some "cHFfc2lnX2R1bW15"
+                , Some (normalizeB64 devPq)
+                , Some "a3liZXJfY3Q="
+                )
+              _ ->
+                (None, None, None)
+
+      -- ✅ FIX: compute canonical digest EXACTLY as the ledger does
+      let ciphertext = "HELLO_ENC"
+      let eph        = "deadbeef"
+      let aadOpt     = None
+
+      let digestCanon =
+            M.mkDigestText
+              ciphertext
+              eph
+              aadOpt
+              spEd25519PubHex
+              dev.publicKey
+              senderPubHex
+              now
+              epoch
+              ctr
+              algId
+
+      -- ✅ FIX: ignore incoming digest + incoming attCids; create/reuse attestations for digestCanon
+      now2 <- getTime
+      let expires2 = addRelTime now2 (seconds 600)
+
+      ps <- listKnownParties
+      let edge2 = M.findParty ps "EdgeNode2"
+
+      a1Cid <- findOrCreateAttestation op edge digestCanon dev.publicKey dev.owner senderPubHex algId now2 expires2
+      a2Cid <- findOrCreateAttestation op edge2 digestCanon dev.publicKey dev.owner senderPubHex algId now2 expires2
+
+      submitMulti [edge, op] [] do
+        exerciseCmd bcCid M.VerifyAndRelayMessage with
+          edge               = edge
+          sp                 = sp
+          senderId           = senderId
+          algId              = algId
+          targetDevice       = devCid
+          encryptedMessage   = ciphertext
+          devicePublicKey    = dev.publicKey
+          senderPublicKey    = senderPubHex
+          digest             = digestCanon
+          msgTimestamp       = now
+          epoch              = epoch
+          merkleRoot         = merkleRoot
+          useZkPac           = useZkPac
+          policyProof        = policyProof
+          attestations       = [a1Cid, a2Cid]
+          zkAttestations     = []
+          spSignatureB64     = spSigB64
+          spEd25519PubHex    = spEd25519PubHex
+          ephX25519Hex       = eph
+          aad                = aadOpt
+          counter            = ctr
+          pqSignatureB64     = pqSigOpt
+          pqPubKey           = pqPubOpt
+          kyberCiphertextB64 = kyberCtOpt
+
+      debug ("[RunAll] VerifyAndRelay submitted; counter=" <> show ctr)
+      pure ()
+
+-- ==================================================
+-- Runners (digest support)
+-- ==================================================
+
+runAllWithDigest : Text -> Script ()
+runAllWithDigest digest = script do
+  _ <- M.setup
+
+  ps <- listKnownParties
+  let op       = M.findParty ps "Operator"
+  let edge1    = M.findParty ps "EdgeNode1"
+  let sp       = M.findParty ps "ServiceProvider1"
+  let devOwner = M.findParty ps "IoTDevice1"
+
+  devs <- query @M.Device op
+  (dev1Cid, dev1) <-
+    case [ (c,d) | (c,d) <- devs, d.owner == devOwner, d.name == "Device1" ] of
+      x :: _ -> pure x
+      []     -> abort "Device1 not found for IoTDevice1. Did setup run?"
+
+  snaps <- query @M.TaSnapshot op
+  (snapEpoch, snapMerkleRoot) <- case snaps of
+    [] -> abort "No TaSnapshot found (setup should have created epoch 0)."
+    _  -> let (_, s) = latestSnapshot snaps
+          in pure (s.epoch, s.merkleRoot)
+
+  now <- getTime
+  let spSigB64  = "ZHVtbXk="
+      senderPk  = "deadbeef"
+      senderId  = "Sender1"
+      algId     = dev1.algId
+      spEdPkHex = "sp-ed25519-pub-hex"
+
+  (bcCid, bc, _who) <- findBrokerFor edge1 op
+
+  verifyAndRelayIfNeeded
+    edge1 op sp senderId algId
+    False None
+    (bcCid, bc) (dev1Cid, dev1)
+    digest now snapEpoch snapMerkleRoot spSigB64 senderPk spEdPkHex []
+
+  debug "[RunAll] runAllWithDigest ok"
+  pure ()
+
+runAllZkPacWithDigest : Text -> Script ()
+runAllZkPacWithDigest digest = script do
+  _ <- M.setup
+
+  ps <- listKnownParties
+  let op       = M.findParty ps "Operator"
+  let edge1    = M.findParty ps "EdgeNode1"
+  let sp       = M.findParty ps "ServiceProvider1"
+  let devOwner = M.findParty ps "IoTDevice1"
+
+  devs <- query @M.Device op
+  (dev1Cid, dev1) <-
+    case [ (c,d) | (c,d) <- devs, d.owner == devOwner, d.name == "Device1" ] of
+      x :: _ -> pure x
+      []     -> abort "Device1 not found for IoTDevice1. Did setup run?"
+
+  snaps <- query @M.TaSnapshot op
+  (snapEpoch, snapMerkleRoot) <- case snaps of
+    [] -> abort "No TaSnapshot found (setup should have created epoch 0)."
+    _  -> let (_, s) = latestSnapshot snaps
+          in pure (s.epoch, s.merkleRoot)
+
+  let policyId = "POLICY1"
+  _ <- ensurePolicyRoot op policyId snapMerkleRoot
+  let leafHash = "leaf-hash-demo"
+  ensurePolicyLeaf op policyId leafHash ["clearance=A"]
+  let pf = mkDemoPolicyProof policyId ["clearance=A"]
+
+  now <- getTime
+  let spSigB64  = "ZHVtbXk="
+      senderPk  = "deadbeef"
+      senderId  = "Sender1-ZK"
+      algId     = dev1.algId
+      spEdPkHex = "sp-ed25519-pub-hex"
+
+  (bcCid, bc, _who) <- findBrokerFor edge1 op
+
+  verifyAndRelayIfNeeded
+    edge1 op sp senderId algId
+    True (Some pf)
+    (bcCid, bc) (dev1Cid, dev1)
+    digest now snapEpoch snapMerkleRoot spSigB64 senderPk spEdPkHex []
+
+  debug "[RunAllZkPac] runAllZkPacWithDigest ok"
+  pure ()
+
+-- Backward compatible names
+runAll : Script ()
+runAll = runAllWithDigest "digest-placeholder"
+
+runAllZkPac : Script ()
+runAllZkPac = runAllZkPacWithDigest "digest-placeholder"
+
+seedRelayLogs : Script ()
+seedRelayLogs = runAll
+
+runRevokeDemo : Script ()
+runRevokeDemo = script do
+  ps <- listKnownParties
+  let op = M.findParty ps "Operator"
+  _ <- submit op do
+    createCmd M.RevokedKey with
+      operator = op
+      epoch    = 0
+      keyText  = "PK1"
+  debug "[RunAll] Revoked PK1 for epoch 0."
+  pure ()
+
+-- ==========================================================
+-- Median utils + perf sampling
+-- ==========================================================
+
+data Median
+  = MedianOdd  with m  : Int
+  | MedianEven with lo : Int; hi : Int
+  deriving (Eq, Show)
+
+medianGo : Optional Int -> [Int] -> [Int] -> Optional Median
+medianGo prev slow fast =
+  case fast of
+    [] ->
+      case (prev, slow) of
+        (Some p, sHead :: _) -> Some (MedianEven with lo = p; hi = sHead)
+        _                    -> None
+    _ :: [] ->
+      case slow of
+        sHead :: _ -> Some (MedianOdd with m = sHead)
+        _          -> None
+    _ :: _ :: rest ->
+      case slow of
+        sHead :: sTail -> medianGo (Some sHead) sTail rest
+        []             -> None
+
+medianInt : [Int] -> Optional Median
+medianInt xs =
+  let ys = List.sort xs
+  in medianGo None ys ys
+
+template PerfSample
+  with
+    operator      : Party
+    operation     : Text
+    tag           : Text
+    executionTime : Int
+    ts            : Time
+  where
+    signatory operator
+
+recordSample : Party -> Time -> Text -> Text -> Int -> Script ()
+recordSample op now opName tag ms = do
+  _ <- submit op do
+    createCmd PerfSample with
+      operator      = op
+      operation     = opName
+      tag           = tag
+      executionTime = ms
+      ts            = now
+  pure ()
+
+recordMany : Party -> Time -> Text -> Text -> [Int] -> Script ()
+recordMany _ _ _ _ [] = pure ()
+recordMany op now opName tag (x :: xs) = do
+  recordSample op now opName tag x
+  recordMany op now opName tag xs
+
+seedAbstractTimes : Script ()
+seedAbstractTimes = script do
+  ps <- listKnownParties
+  let op = M.findParty ps "Operator"
+  now <- getTime
+  let tag   = "A=16,cache=on,payload=1MB"
+  let te2e  = [480, 505, 498, 510, 495]
+  let tbsc  = [110, 120, 118, 123, 115]
+  let tedge = [25,  23,  22,  27,  26]
+  let tdev  = [14,  13,  12,  15,  14]
+  recordMany op now "Te2e"  tag te2e
+  recordMany op now "Tbsc"  tag tbsc
+  recordMany op now "Tedge" tag tedge
+  recordMany op now "Tdev"  tag tdev
+  debug "[seedAbstractTimes] inserted sample timings."
+  pure ()
+
+calcMedian : Script ()
+calcMedian = script do
+  ps <- listKnownParties
+  let op = M.findParty ps "Operator"
+  rows <- query @PerfSample op
+  let opNameWanted = "Te2e"
+  let tagWanted    = "A=16,cache=on,payload=1MB"
+  let xs =
+        [ l.executionTime
+        | (_cid, l) <- rows
+        , l.operation == opNameWanted
+        , l.tag       == tagWanted
+        ]
+  case medianInt xs of
+    None -> debug ("[Median] no samples for " <> opNameWanted <> " / " <> tagWanted)
+    Some (MedianOdd  {m})     ->
+      debug ("[Median] " <> opNameWanted <> " " <> tagWanted <> " = " <> show m <> " ms")
+    Some (MedianEven {lo,hi}) ->
+      debug ("[Median] " <> opNameWanted <> " " <> tagWanted <> " middles = (" <> show lo <> "," <> show hi <> ")")
+  pure ()
+
+calcMedianRelayCounters : Script ()
+calcMedianRelayCounters = script do
+  ps <- listKnownParties
+  let op = M.findParty ps "Operator"
+  logs <- query @M.RelayLog op
+  let samples = [ r.counter | (_cid, r) <- logs ]
+  case medianInt samples of
+    None -> debug "[Median] No RelayLog samples."
+    Some (MedianOdd  {m})     ->
+      debug ("[Median] RelayLog.counter median = " <> show m)
+    Some (MedianEven {lo,hi}) ->
+      debug ("[Median] RelayLog.counter even-count middles = (" <> show lo <> "," <> show hi <> ")")
+  pure ()
+
+ackLatest : Script ()
+ackLatest = script do
+  ps <- listKnownParties
+  let op = M.findParty ps "Operator"
+  logs <- query @M.RelayLog op
+  case logs of
+    [] -> debug "No RelayLogs" >> pure ()
+    (cid, _r) :: _ -> do
+      newCid <- submit op do exerciseCmd cid M.Acknowledge
+      debug ("Acked. New CID=" <> show newCid)
+      pure ()
+
+exportPerfCSV : Script ()
+exportPerfCSV = script do
+  ps <- listKnownParties
+  let op = M.findParty ps "Operator"
+  rows <- query @PerfSample op
+  debug "operation,tag,ms,timestamp"
+  mapScript_ (\(_cid, l) ->
+      debug (l.operation <> "," <> l.tag <> "," <> show l.executionTime <> "," <> show l.ts)
+    ) rows
+  pure ()
+
+wipePerfSamples : Script ()
+wipePerfSamples = script do
+  ps <- listKnownParties
+  let op = M.findParty ps "Operator"
+  rows <- query @PerfSample op
+  mapScript_ (\(cid, _) -> submit op do exerciseCmd cid Archive) rows
+  debug "[wipePerfSamples] archived all PerfSample rows."
+  pure ()

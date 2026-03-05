@@ -1,0 +1,11 @@
+﻿{
+  "templateId": "Main:BrokerContract",
+  "contractId": "00202a34ba467dcf2369addf54efeb708388686782b3544d953c424b976d2bf529ca0312206c52b968b7faa3042fdca4e3893742459f0310eb3f30213285067818cbc6920d",
+  "choice": "VerifyAndRelayMessage",
+  "argument": {
+    "targetDevice": "00f7ea4b1a935ec0c191ffedfd6d69d9e97e63024fc15dc6023f7ec72374d4adb5ca03122093f219bee1d13986645acc3b4ed887ca480307bf637e077729200c731069787c",
+    "encryptedMessage": "Hello from UI",
+    "senderPublicKey": "PK1",
+    "signature": "SIG"
+  }
+}

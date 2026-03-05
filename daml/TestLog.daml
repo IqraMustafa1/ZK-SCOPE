@@ -1,0 +1,43 @@
+module TestLog where
+
+import Daml.Script
+import Main
+
+testLog : Script ()
+testLog = script do
+  -- ✅ Check if party "Operator" already exists
+  existingParties <- listKnownParties
+  let maybeOperator = [p.party | p <- existingParties, p.displayName == Some "Operator"]
+  operator <-
+    case maybeOperator of
+      [p] -> do
+        debug "✅ Reusing existing Operator party"
+        return p
+      [] -> do
+        debug "ℹ️ Allocating new Operator party"
+        allocatePartyWithHint "Operator" (PartyIdHint "Operator")
+      _ -> abort "❌ Multiple Operator parties found!"
+
+  -- ✅ Fetch the first available BrokerContract
+  brokerContracts <- query @BrokerContract operator
+
+  case brokerContracts of
+    [] -> abort "❌ No BrokerContract found."
+    (contractId, _)::_ -> do
+      debug "🚀 Submitting LogExecutionTime choice on BrokerContract"
+      _ <- submit operator do
+        exerciseCmd contractId LogExecutionTime with
+          operation = "script-test"
+          executionTime = 42
+      debug "✅ LogExecutionTime exercised successfully"
+
+  -- ✅ Submit a direct LogRequest to test Flask integration
+  debug "🚀 Submitting direct LogRequest to Flask"
+  _ <- submit operator do
+    createCmd LogRequest with
+      operator = operator
+      logData  = "{ \"logs\": [{ \"operator_id\": \"script-op\", \"operation\": \"manual-log\", \"execution_time\": 77 }]}"
+      endpoint = "http://localhost:5000/log_batch_activity"
+  debug "✅ LogRequest contract created"
+
+  return ()

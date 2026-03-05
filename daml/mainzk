@@ -1,0 +1,1568 @@
+module Main where
+
+import Daml.Script
+import DA.Time
+import DA.Foldable as Foldable
+import DA.List as L
+import DA.Map as Map
+import DA.Text as T
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Small helper: convert Party -> Text without surrounding quotes
+partyToTextClean : Party -> Text
+partyToTextClean p =
+  let raw = show p
+  in T.dropSuffix "'" (T.dropPrefix "'" raw)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Algorithm identifiers (metadata only; crypto is off-ledger)
+
+data AlgId
+  = ALG_X25519_AESGCM_ED25519
+  | ALG_HYBRID_X25519_KYBER_AESGCM_HYBRID_SIG
+  deriving (Eq, Show)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ZK-PAC: Proof object (Merkle-style commitment + verifier metadata + proof blob)
+--
+-- NOTE (design intent):
+-- - Ledger does NOT verify the ZK proof cryptographically.
+-- - Ledger DOES verify:
+--     (1) Merkle path consistency against the active snapshot root (deterministic on-ledger)
+--     (2) vkId allowlist (on-ledger)
+--     (3) revealedAttrsHash computed from revealedAttrs (on-ledger)
+--
+data PolicyProof = PolicyProof
+  with
+    policyId          : Text
+    leafHash          : Text
+    merklePath        : [Text]   -- each step encoded as "L:<sib>" or "R:<sib>"
+    revealedAttrs     : [Text]
+    revealedAttrsHash : Text     -- MUST equal computeRevealedAttrsHash(revealedAttrs)
+    vkId              : Text
+    proofB64          : Text
+  deriving (Eq, Show)
+
+-- NEW: ZK-PAC leaf anchor (allowed attrs for selective disclosure)
+template PolicyLeaf
+  with
+    operator     : Party
+    policyId     : Text
+    leafHash     : Text
+    allowedAttrs : [Text]
+  where
+    signatory operator
+    observer operator
+    key (operator, (policyId, leafHash)) : (Party, (Text, Text))
+    maintainer (fst key)
+
+-- NEW: vkId allowlist (on-ledger)
+template AllowedVkId
+  with
+    operator : Party
+    vkId     : Text
+  where
+    signatory operator
+    observer operator
+    key (operator, vkId) : (Party, Text)
+    maintainer (fst key)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Helpers
+
+intersect : Eq a => [a] -> [a] -> [a]
+intersect xs ys = [x | x <- xs, Foldable.elem x ys]
+
+isSubset : Eq a => [a] -> [a] -> Bool
+isSubset req have = Foldable.all (\x -> Foldable.elem x have) req
+
+withinWindow : Time -> Time -> Time -> Bool
+withinWindow t start end = (start <= t) && (t <= end)
+
+nub : Eq a => [a] -> [a] -> [a]
+nub [] _ = []
+nub (x :: xs) seen =
+  if Foldable.elem x seen
+  then nub xs seen
+  else x :: nub xs (x :: seen)
+
+foldlScript : (b -> a -> Script b) -> b -> [a] -> Script b
+foldlScript _ acc [] = pure acc
+foldlScript f acc (x :: xs) = do
+  acc' <- f acc x
+  foldlScript f acc' xs
+
+foldlUpdate : (b -> a -> Update b) -> b -> [a] -> Update b
+foldlUpdate _ acc [] = pure acc
+foldlUpdate f acc (x :: xs) = do
+  acc' <- f acc x
+  foldlUpdate f acc' xs
+
+-- Find a party by display name (exported for RunAll)
+findParty : [PartyDetails] -> Text -> Party
+findParty ps name =
+  case [ p.party | p <- ps, p.displayName == Some name ] of
+    x :: _ -> x
+    []     -> error ("Missing " <> name)
+
+-- Join helper (avoid depending on non-portable intercalate)
+joinWith : Text -> [Text] -> Text
+joinWith _ [] = ""
+joinWith sep (x :: xs) =
+  Foldable.foldl (\acc t -> acc <> sep <> t) x xs
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Base64 / PQ sanity checks (lightweight: we don't decode on-ledger)
+
+normalizeB64 : Text -> Text
+normalizeB64 t =
+  T.replace "\n" "" (
+  T.replace "\r" "" (
+  T.replace "\t" "" (
+  T.replace " "  "" t )))
+
+stripB64Padding : Text -> Text
+stripB64Padding t =
+  T.dropWhileEnd (\c -> c == "=") t
+
+allowedB64Chars : [Text]
+allowedB64Chars =
+  T.explode "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-"
+
+firstBadB64CharGo : [Text] -> Optional Text
+firstBadB64CharGo [] = None
+firstBadB64CharGo (c :: rest) =
+  if Foldable.elem c allowedB64Chars
+  then firstBadB64CharGo rest
+  else Some c
+
+firstBadB64Char : Text -> Optional Text
+firstBadB64Char t =
+  firstBadB64CharGo (T.explode (normalizeB64 t))
+
+isBase64Text : Text -> Bool
+isBase64Text t =
+  case firstBadB64Char t of
+    None   -> True
+    Some _ -> False
+
+isLikelyHybridPqPubB64 : Text -> Bool
+isLikelyHybridPqPubB64 b64Raw =
+  let b64 = normalizeB64 b64Raw
+      n   = T.length (stripB64Padding b64)
+  in (n >= 900 && n <= 2300) && isBase64Text b64
+
+assertHybridPqKeyOk : Optional Text -> Update ()
+assertHybridPqKeyOk pqOpt =
+  case pqOpt of
+    None -> abort "[Hybrid] pqPubKey required for hybrid AlgId"
+    Some b64Raw -> do
+      let b64 = normalizeB64 b64Raw
+      case firstBadB64Char b64 of
+        Some bad ->
+          abort ("[Hybrid] pqPubKey invalid Base64 char: " <> show bad)
+        None ->
+          assertMsg "[Hybrid] pqPubKey size sanity check failed"
+            (isLikelyHybridPqPubB64 b64)
+
+-- ZK proof blob sanity (lightweight): must be non-empty and base64-ish.
+assertZkProofBlobOk : Text -> Update ()
+assertZkProofBlobOk proofB64 =
+  let pN = normalizeB64 proofB64
+  in do
+    assertMsg "[ZK-PAC] proofB64 must be non-empty" (pN /= "")
+    case firstBadB64Char pN of
+      Some bad -> abort ("[ZK-PAC] proofB64 invalid Base64 char: " <> show bad)
+      None     -> pure ()
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Deterministic digest helper (PAPER-ALIGNED)
+
+mkDigestText
+  : Text -> Text -> Optional Text -> Text -> Text -> Text
+  -> Time -> Int -> Int -> AlgId -> Text
+mkDigestText ciphertext eph aad spPub devicePk senderPk ts epoch counter algId =
+  "ct=" <> ciphertext
+  <> "|eph=" <> eph
+  <> "|aad=" <> (case aad of None -> ""; Some a -> a)
+  <> "|sp=" <> spPub
+  <> "|dev=" <> devicePk
+  <> "|sender=" <> senderPk
+  <> "|ts=" <> show ts
+  <> "|epoch=" <> show epoch
+  <> "|ctr=" <> show counter
+  <> "|alg=" <> show algId
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- NEW: revealedAttrsHash computed + verified on-ledger
+--
+-- IMPORTANT:
+-- DAML has no built-in cryptographic hash primitive that is guaranteed portable
+-- across all runtimes in the way you need, so the safest deployable approach is:
+--   revealedAttrsHash := canonical ID = joinWith "|" revealedAttrs
+--
+-- If you later add a real hash off-ledger, keep this function in sync.
+computeRevealedAttrsHash : [Text] -> Text
+computeRevealedAttrsHash attrs =
+  joinWith "|" attrs
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- NEW: Merkle path check (deterministic on-ledger)
+--
+-- We define a deterministic “Merkle-style” fold. Each path element is:
+--   "L:<sib>" or "R:<sib>"
+--
+-- The fold uses a deterministic combine:
+--   H(cur, sib, dir) := "H(" <> dir <> ":" <> cur <> ":" <> sib <> ")"
+--
+-- This is not cryptographic, but it IS verifiable on-ledger.
+-- If you want cryptographic hashing, you must implement/standardize a hash primitive
+-- that both off-ledger and on-ledger can compute identically.
+--
+isPrefix : Text -> Text -> Bool
+isPrefix pref s =
+  T.take (T.length pref) s == pref
+
+dropPrefixUnsafe : Text -> Text -> Text
+dropPrefixUnsafe pref s = T.drop (T.length pref) s
+
+merkleCombine : Text -> Text -> Text -> Text
+merkleCombine dir cur sib =
+  "H(" <> dir <> ":" <> cur <> ":" <> sib <> ")"
+
+applyMerkleStep : Text -> Text -> Text
+applyMerkleStep cur step =
+  if isPrefix "L:" step then
+    let sib = dropPrefixUnsafe "L:" step
+    in merkleCombine "L" cur sib
+  else if isPrefix "R:" step then
+    let sib = dropPrefixUnsafe "R:" step
+    in merkleCombine "R" cur sib
+  else
+    -- Reject unknown encoding; keep fail-closed
+    "INVALID_STEP"
+
+merkleRootFromLeaf : Text -> [Text] -> Text
+merkleRootFromLeaf leaf path =
+  Foldable.foldl (\cur step -> applyMerkleStep cur step) leaf path
+
+assertMerklePathOk : Text -> [Text] -> Text -> Update ()
+assertMerklePathOk leafHash merklePath expectedRoot = do
+  -- allow empty path (root = leaf)
+  let root = merkleRootFromLeaf leafHash merklePath
+  assertMsg "[ZK-PAC] merklePath step encoding invalid (expected L:/R:)" (root /= "INVALID_STEP")
+  assertMsg "[ZK-PAC] merklePath does not derive expected snapshot Merkle root" (root == expectedRoot)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Canonical ZK verification statement (TEXT) for threshold attestations.
+mkZkStatement
+  : Party -> Int -> Text -> Int -> Text -> Party
+  -> Text -> Text -> Text -> Text -> AlgId -> Text -> Text
+mkZkStatement operator epoch merkleRoot counter devicePk sp
+              policyId leafHash revealedAttrsHash digest algId vkId =
+  "op=" <> partyToTextClean operator
+  <> "|epoch=" <> show epoch
+  <> "|mr=" <> merkleRoot
+  <> "|ctr=" <> show counter
+  <> "|dev=" <> devicePk
+  <> "|sp=" <> partyToTextClean sp
+  <> "|policyId=" <> policyId
+  <> "|leafHash=" <> leafHash
+  <> "|rah=" <> revealedAttrsHash
+  <> "|digest=" <> digest
+  <> "|alg=" <> show algId
+  <> "|vkId=" <> vkId
+  <> "|res=OK"
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- TA committee / governance
+
+template TACommittee
+  with
+    operator  : Party
+    members   : [Party]
+    threshold : Int
+  where
+    signatory operator
+    observer (operator :: members)
+    key operator : Party
+    maintainer key
+
+template TaSnapshot
+  with
+    operator   : Party
+    epoch      : Int
+    merkleRoot : Text
+  where
+    signatory operator
+    observer operator
+    key (operator, epoch) : (Party, Int)
+    maintainer (fst key)
+
+template PolicyRoot
+  with
+    operator   : Party
+    policyId   : Text
+    merkleRoot : Text
+  where
+    signatory operator
+    observer operator
+    key (operator, policyId) : (Party, Text)
+    maintainer (fst key)
+
+template RevokedKey
+  with
+    operator : Party
+    epoch    : Int
+    keyText  : Text
+  where
+    signatory operator
+    observer operator
+    key (operator, (epoch, keyText)) : (Party, (Int, Text))
+    maintainer (fst key)
+
+-- Legacy digest attestation (also used in non-ZK mode)
+template SigAttestation
+  with
+    operator        : Party
+    issuer          : Party
+    digest          : Text
+    deviceOwner     : Party
+    devicePublicKey : Text
+    senderPublicKey : Text
+    algId           : AlgId
+    ts              : Time
+    expires         : Time
+  where
+    signatory issuer
+    observer (operator :: deviceOwner :: [issuer])
+    key (operator, digest, issuer) : (Party, Text, Party)
+    maintainer (case key of (_, _, iss) -> iss)
+
+-- ZK proof-verification attestation (threshold accountability)
+template ZkVerifyAttestation
+  with
+    operator           : Party
+    issuer             : Party
+    epoch              : Int
+    merkleRoot         : Text
+    counter            : Int
+    devicePublicKey    : Text
+    sp                 : Party
+    policyId           : Text
+    leafHash           : Text
+    revealedAttrsHash  : Text
+    digest             : Text
+    algId              : AlgId
+    vkId               : Text
+    statement          : Text
+    ts                 : Time
+    expires            : Time
+  where
+    signatory issuer
+    observer (operator :: sp :: [issuer])
+    key (operator, digest, issuer) : (Party, Text, Party)
+    maintainer (case key of (_, _, iss) -> iss)
+
+template SnapshotApproval
+  with
+    operator : Party
+    epoch    : Int
+    approver : Party
+  where
+    signatory operator, approver
+    observer (operator :: [approver])
+    key (operator, (epoch, approver)) : (Party, (Int, Party))
+    maintainer (fst key)
+
+template SnapshotProposal
+  with
+    operator         : Party
+    epoch            : Int
+    merkleRoot       : Text
+    approvers        : [Party]
+    committeeMembers : [Party]
+  where
+    signatory operator
+    observer (operator :: committeeMembers)
+
+    nonconsuming choice Approve : ()
+      with approver : Party
+      controller approver
+      do
+        (_, committee) <- fetchByKey @TACommittee operator
+        assertMsg "[Approve] approver not a committee member"
+          (Foldable.elem approver committee.members)
+        exists <- lookupByKey @SnapshotApproval (operator, (epoch, approver))
+        case exists of
+          Some _ -> abort "[Approve] duplicate approval"
+          None   -> do
+            _ <- create SnapshotApproval with operator, epoch, approver
+            pure ()
+
+    choice Publish : ContractId TaSnapshot
+      controller operator
+      do
+        (_, committee) <- fetchByKey @TACommittee operator
+        approvalsCount <-
+          foldlUpdate
+            (\acc m -> do
+               e <- lookupByKey @SnapshotApproval (operator, (epoch, m))
+               case e of Some _ -> pure (acc + 1); None -> pure acc)
+            0
+            committee.members
+        assertMsg "[Publish] not enough approvals"
+          (approvalsCount >= committee.threshold)
+        existing <- lookupByKey @TaSnapshot (operator, epoch)
+        case existing of
+          Some _ -> abort "[Publish] snapshot already exists"
+          None   -> create TaSnapshot with operator, epoch, merkleRoot
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Access control (legacy RBAC/ABAC)
+
+template SPProfile
+  with
+    operator : Party
+    subject  : Party
+    roles    : [Text]
+    attrs    : [Text]
+    expires  : Time
+  where
+    signatory operator
+    observer (operator :: [subject])
+    key (operator, subject) : (Party, Party)
+    maintainer (fst key)
+
+template AccessPolicy
+  with
+    operator      : Party
+    subject       : Party
+    deviceOwner   : Party
+    deviceKey     : Text
+    requiredRoles : [Text]
+    requiredAttrs : [Text]
+    windowStart   : Time
+    windowEnd     : Time
+  where
+    signatory operator
+    observer (operator :: subject :: deviceOwner :: [])
+    key (operator, subject) : (Party, Party)
+    maintainer (fst key)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- IoT device
+
+template Device
+  with
+    owner      : Party
+    broker     : Party
+    edge       : Party
+    name       : Text
+    publicKey  : Text
+    algId      : AlgId
+    attributes : [Text]
+    pqPubKey   : Optional Text
+  where
+    signatory owner
+    observer (owner :: [broker, edge])
+    key (owner, publicKey) : (Party, Text)
+    maintainer (fst key)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Ratchet state (key excludes edge; strict consecutive counters)
+
+template RatchetState
+  with
+    operator  : Party
+    edge      : Party
+    deviceKey : Text
+    senderId  : Text
+    epoch     : Int
+    lastCtr   : Int
+  where
+    signatory operator
+    observer (operator :: [edge])
+    key (operator, deviceKey, senderId, epoch) : (Party, Text, Text, Int)
+    maintainer (case key of (op, _, _, _) -> op)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Relay log
+
+template RelayLog
+  with
+    operator             : Party
+    edge                 : Party
+    sp                   : Party
+    senderId             : Text
+    deviceOwner          : Party
+    deviceKey            : Text
+    bcCid                : ContractId BrokerContract
+    digest               : Text
+    ciphertextB64        : Text
+    ephX25519Hex         : Text
+    aad                  : Optional Text
+    counter              : Int
+    ts                   : Time
+    epoch                : Int
+    merkleRoot           : Text
+    algId                : AlgId
+    useZkPac             : Bool
+    policyIdOpt          : Optional Text
+    leafHashOpt          : Optional Text
+    revealedAttrsHashOpt : Optional Text
+    vkIdOpt              : Optional Text
+    spSignatureB64       : Text
+    spEd25519PubHex      : Text
+    pqSignatureB64       : Optional Text
+    pqPubKey             : Optional Text
+    kyberCiphertextB64   : Optional Text
+    acked                : Bool
+  where
+    signatory operator
+    observer (operator :: deviceOwner :: sp :: [edge])
+
+    key (operator, deviceKey, epoch, senderId, counter)
+        : (Party, Text, Int, Text, Int)
+    maintainer (case key of (op, _, _, _, _) -> op)
+
+    nonconsuming choice Acknowledge : ContractId RelayLog
+      controller operator
+      do
+        if acked then
+          pure self
+        else do
+          archive self
+          create (this with acked = True)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Logging envelope
+
+template LogRequest
+  with
+    operator : Party
+    logData  : Text
+    endpoint : Text
+  where
+    signatory operator
+    observer operator
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Broker contract
+
+template BrokerContract
+  with
+    operator         : Party
+    edgeNodes        : [(Party, Time)]
+    iotDevices       : [(Party, Text)]
+    cachedValidNodes : [(Party, Time)]
+    validUntil       : Time
+  where
+    signatory operator
+    observer ([ p | (p, _) <- edgeNodes ] ++ [ p | (p, _) <- iotDevices ])
+
+    key operator : Party
+    maintainer key
+
+    choice RefreshCache : ContractId BrokerContract
+      with
+        newValidUntil : Time
+        newCached     : [(Party, Time)]
+      controller operator
+      do
+        assertMsg "[RefreshCache] cannot shorten validity"
+          (validUntil <= newValidUntil)
+
+        let updated =
+              this with
+                cachedValidNodes = newCached
+                validUntil       = newValidUntil
+
+        archive self
+        create updated
+
+    nonconsuming choice RegisterDevice : ContractId Device
+      with
+        edge        : Party
+        owner       : Party
+        name        : Text
+        publicKey   : Text
+        attributes  : [Text]
+        algId       : AlgId
+        attestation : ContractId SigAttestation
+        pqPubKeyOpt : Optional Text
+      controller edge
+      do
+        now <- getTime
+        assertMsg "[RegisterDevice] edge not in edgeNodes"
+          (Foldable.elem edge [ p | (p, _) <- edgeNodes ])
+        assertMsg "[RegisterDevice] cache expired; call RefreshCache"
+          (now <= validUntil)
+
+        a <- fetch attestation
+        (_, committee) <- fetchByKey @TACommittee operator
+        assertMsg "[RegisterDevice] attestation operator mismatch"
+          (a.operator == operator)
+        assertMsg "[RegisterDevice] deviceOwner mismatch"
+          (a.deviceOwner == owner)
+        assertMsg "[RegisterDevice] deviceKey mismatch"
+          (a.devicePublicKey == publicKey)
+        assertMsg "[RegisterDevice] attestation expired"
+          (now <= a.expires)
+        assertMsg "[RegisterDevice] issuer not a committee member"
+          (Foldable.elem a.issuer committee.members)
+        assertMsg "[RegisterDevice] algId mismatch" (a.algId == algId)
+
+        case algId of
+          ALG_X25519_AESGCM_ED25519 ->
+            assertMsg "[RegisterDevice] pqPubKey must be empty for classical AlgId"
+              (pqPubKeyOpt == None)
+          ALG_HYBRID_X25519_KYBER_AESGCM_HYBRID_SIG ->
+            assertHybridPqKeyOk pqPubKeyOpt
+
+        let pqNorm =
+              case pqPubKeyOpt of
+                None   -> None
+                Some t -> Some (normalizeB64 t)
+
+        create Device with
+          owner
+          broker   = operator
+          edge
+          name
+          publicKey
+          algId
+          attributes
+          pqPubKey = pqNorm
+
+    nonconsuming choice VerifyAndRelayMessage : ContractId RelayLog
+      with
+        edge               : Party
+        sp                 : Party
+        senderId           : Text
+        algId              : AlgId
+        targetDevice       : ContractId Device
+        encryptedMessage   : Text
+        devicePublicKey    : Text
+        senderPublicKey    : Text
+        digest             : Text
+        msgTimestamp       : Time
+        epoch              : Int
+        merkleRoot         : Text
+        useZkPac           : Bool
+        policyProof        : Optional PolicyProof
+        attestations       : [ContractId SigAttestation]
+        zkAttestations     : [ContractId ZkVerifyAttestation]
+        spSignatureB64     : Text
+        spEd25519PubHex    : Text
+        ephX25519Hex       : Text
+        aad                : Optional Text
+        counter            : Int
+        pqSignatureB64     : Optional Text
+        pqPubKey           : Optional Text
+        kyberCiphertextB64 : Optional Text
+      controller edge, operator
+      do
+        now <- getTime
+
+        assertMsg "[Verify] edge not in edgeNodes"
+          (Foldable.elem edge [ p | (p, _) <- edgeNodes ])
+        assertMsg "[Verify] cache expired; call RefreshCache"
+          (now <= validUntil)
+        assertMsg "[Verify] edge not in cachedValidNodes"
+          (Foldable.elem edge [ p | (p, _) <- cachedValidNodes ])
+
+        device <- fetch targetDevice
+        assertMsg "[Verify] device broker mismatch"
+          (device.broker == operator)
+        assertMsg "[Verify] devicePublicKey mismatch"
+          (devicePublicKey == device.publicKey)
+        assertMsg "[Verify] algId mismatch (device vs message)"
+          (device.algId == algId)
+
+        let expectedDigest =
+              mkDigestText
+                encryptedMessage
+                ephX25519Hex
+                aad
+                spEd25519PubHex
+                devicePublicKey
+                senderPublicKey
+                msgTimestamp
+                epoch
+                counter
+                algId
+
+        assertMsg "[Verify] digest does not match canonical mkDigestText"
+          (digest == expectedDigest)
+
+        case algId of
+          ALG_X25519_AESGCM_ED25519 ->
+            case (pqSignatureB64, pqPubKey, kyberCiphertextB64, device.pqPubKey) of
+              (None, None, None, None) -> pure ()
+              _ -> abort "[Hybrid] PQ fields must be empty for classical AlgId"
+
+          ALG_HYBRID_X25519_KYBER_AESGCM_HYBRID_SIG ->
+            case (pqSignatureB64, pqPubKey, kyberCiphertextB64, device.pqPubKey) of
+              (Some _, Some p, Some _, Some devP) -> do
+                let pN    = normalizeB64 p
+                let devPN = normalizeB64 devP
+                assertMsg "[Hybrid] pqPubKey mismatch vs registered device" (pN == devPN)
+                assertMsg "[Hybrid] pqPubKey size/charset sanity check failed"
+                  (isLikelyHybridPqPubB64 pN)
+                pure ()
+              _ ->
+                abort "[Hybrid] Missing pqSignatureB64 / pqPubKey / kyberCiphertextB64 or device pqPubKey for hybrid AlgId"
+
+        mSnapCid <- lookupByKey @TaSnapshot (operator, epoch)
+        snap <- case mSnapCid of
+          Some cid -> fetch cid
+          None     -> abort "[Verify] snapshot missing for this epoch"
+        assertMsg "[Verify] snapshot Merkle root mismatch"
+          (snap.merkleRoot == merkleRoot)
+
+        rkDev <- lookupByKey @RevokedKey (operator, (epoch, devicePublicKey))
+        case rkDev of
+          Some _ -> abort "[Verify] device key revoked for this epoch"
+          None   -> pure ()
+
+        rkSp <- lookupByKey @RevokedKey (operator, (epoch, spEd25519PubHex))
+        case rkSp of
+          Some _ -> abort "[Verify] SP key revoked for this epoch"
+          None   -> pure ()
+
+        assertMsg "[Verify] stale/future message"
+          (msgTimestamp <= now &&
+             now <= addRelTime msgTimestamp (seconds 300))
+
+        if useZkPac then do
+          pf <- case policyProof of
+            None -> abort "[ZK-PAC] useZkPac=True but no policyProof supplied"
+            Some x -> pure x
+
+          assertMsg "[ZK-PAC] invalid proof (empty leafHash)" (pf.leafHash /= "")
+          assertMsg "[ZK-PAC] invalid proof (empty policyId)" (pf.policyId /= "")
+          assertMsg "[ZK-PAC] invalid verifier key id (empty vkId)" (pf.vkId /= "")
+          assertMsg "[ZK-PAC] invalid revealedAttrsHash (empty)" (pf.revealedAttrsHash /= "")
+          assertZkProofBlobOk pf.proofB64
+
+          -- ✅ vkId allowlist (on-ledger)
+          mVk <- lookupByKey @AllowedVkId (operator, pf.vkId)
+          case mVk of
+            None   -> abort "[ZK-PAC] vkId not allowed (no AllowedVkId record)"
+            Some _ -> pure ()
+
+          -- PolicyRoot must match active snapshot
+          mPrCid <- lookupByKey @PolicyRoot (operator, pf.policyId)
+          case mPrCid of
+            None -> abort "[ZK-PAC] PolicyRoot missing for policyId"
+            Some prCid -> do
+              pr <- fetch prCid
+              assertMsg "[ZK-PAC] Merkle root mismatch with PolicyRoot"
+                (pr.merkleRoot == merkleRoot)
+
+          -- ✅ merklePath check (on-ledger): leafHash + path must derive snapshot root
+          assertMerklePathOk pf.leafHash pf.merklePath merkleRoot
+
+          -- PolicyLeaf must exist + attrs subset
+          mLeafCid <- lookupByKey @PolicyLeaf (operator, (pf.policyId, pf.leafHash))
+          case mLeafCid of
+            None      -> abort "[ZK-PAC] No PolicyLeaf anchor for leafHash"
+            Some lcid -> do
+              leaf <- fetch lcid
+              assertMsg "[ZK-PAC] revealedAttrs not allowed by leaf"
+                (isSubset pf.revealedAttrs leaf.allowedAttrs)
+
+          -- ✅ revealedAttrsHash computed/verified on-ledger
+          let expectedRah = computeRevealedAttrsHash pf.revealedAttrs
+          assertMsg "[ZK-PAC] revealedAttrsHash mismatch (must equal computeRevealedAttrsHash(revealedAttrs))"
+            (pf.revealedAttrsHash == expectedRah)
+
+          -- Threshold attestations:
+          (_, committee) <- fetchByKey @TACommittee operator
+
+          let expectedStmt =
+                mkZkStatement operator epoch merkleRoot counter devicePublicKey sp
+                             pf.policyId pf.leafHash pf.revealedAttrsHash digest algId pf.vkId
+
+          if (L.length zkAttestations > 0) then do
+            let
+              validateZkOne (count, seen) cid = do
+                a <- fetch cid
+                assertMsg "[ZK-Attest] operator mismatch" (a.operator == operator)
+                assertMsg "[ZK-Attest] digest mismatch" (a.digest == digest)
+                assertMsg "[ZK-Attest] epoch mismatch" (a.epoch == epoch)
+                assertMsg "[ZK-Attest] merkleRoot mismatch" (a.merkleRoot == merkleRoot)
+                assertMsg "[ZK-Attest] counter mismatch" (a.counter == counter)
+                assertMsg "[ZK-Attest] deviceKey mismatch" (a.devicePublicKey == devicePublicKey)
+                assertMsg "[ZK-Attest] sp mismatch" (a.sp == sp)
+                assertMsg "[ZK-Attest] policyId mismatch" (a.policyId == pf.policyId)
+                assertMsg "[ZK-Attest] leafHash mismatch" (a.leafHash == pf.leafHash)
+                assertMsg "[ZK-Attest] revealedAttrsHash mismatch" (a.revealedAttrsHash == pf.revealedAttrsHash)
+                assertMsg "[ZK-Attest] algId mismatch" (a.algId == algId)
+                assertMsg "[ZK-Attest] vkId mismatch" (a.vkId == pf.vkId)
+                assertMsg "[ZK-Attest] statement mismatch" (a.statement == expectedStmt)
+                assertMsg "[ZK-Attest] attestation expired" (now <= a.expires)
+                assertMsg "[ZK-Attest] issuer not a committee member"
+                  (Foldable.elem a.issuer committee.members)
+
+                assertMsg "[ZK-Attest] duplicate issuer in zkAttestation set"
+                  (not (Foldable.elem a.issuer seen))
+
+                pure (count + 1, a.issuer :: seen)
+
+            (zkCount, _seenZk) <- foldlUpdate validateZkOne (0, []) zkAttestations
+            assertMsg "[ZK-Attest] insufficient zkAttestations"
+              (zkCount >= committee.threshold)
+
+          else do
+            -- FALLBACK: threshold SigAttestation (bench mode)
+            let
+              validateOne (count, seen) cid = do
+                a <- fetch cid
+                assertMsg "[Attest] operator mismatch" (a.operator == operator)
+                assertMsg "[Attest] digest mismatch" (a.digest == digest)
+                assertMsg "[Attest] deviceOwner mismatch" (a.deviceOwner == device.owner)
+                assertMsg "[Attest] deviceKey mismatch" (a.devicePublicKey == device.publicKey)
+                assertMsg "[Attest] senderKey mismatch" (a.senderPublicKey == senderPublicKey)
+                assertMsg "[Attest] algId mismatch" (a.algId == algId)
+                assertMsg "[Attest] attestation expired" (now <= a.expires)
+                assertMsg "[Attest] issuer not a committee member"
+                  (Foldable.elem a.issuer committee.members)
+
+                assertMsg "[Attest] duplicate issuer in attestation set"
+                  (not (Foldable.elem a.issuer seen))
+
+                pure (count + 1, a.issuer :: seen)
+
+            (attestCount, _seenIss) <- foldlUpdate validateOne (0, []) attestations
+            assertMsg "[Attest] insufficient attestations (ZK fallback)"
+              (attestCount >= committee.threshold)
+
+        else do
+          mPolCid <- lookupByKey @AccessPolicy (operator, sp)
+          polCid <- case mPolCid of
+            Some cid -> pure cid
+            None     -> abort "[Verify] AccessPolicy missing for this SP"
+          pol <- fetch polCid
+
+          assertMsg "[Verify] policy-deviceOwner mismatch"
+            (pol.deviceOwner == device.owner)
+          assertMsg "[Verify] policy-deviceKey mismatch"
+            (pol.deviceKey == device.publicKey)
+          assertMsg "[Verify] outside access window"
+            (withinWindow now pol.windowStart pol.windowEnd)
+
+          mProfCid <- lookupByKey @SPProfile (operator, sp)
+          profCid <- case mProfCid of
+            Some cid -> pure cid
+            None     -> abort "[Verify] SPProfile missing for this SP"
+          spProfile <- fetch profCid
+
+          assertMsg "[Verify] SP profile expired"
+            (now <= spProfile.expires)
+          assertMsg "[Verify] RBAC roles unmet"
+            (isSubset pol.requiredRoles spProfile.roles)
+          assertMsg "[Verify] ABAC attrs unmet"
+            (isSubset pol.requiredAttrs spProfile.attrs)
+
+          (_, committee) <- fetchByKey @TACommittee operator
+
+          let
+            validateOne (count, seen) cid = do
+              a <- fetch cid
+              assertMsg "[Attest] operator mismatch" (a.operator == operator)
+              assertMsg "[Attest] digest mismatch" (a.digest == digest)
+              assertMsg "[Attest] deviceOwner mismatch" (a.deviceOwner == device.owner)
+              assertMsg "[Attest] deviceKey mismatch" (a.devicePublicKey == device.publicKey)
+              assertMsg "[Attest] senderKey mismatch" (a.senderPublicKey == senderPublicKey)
+              assertMsg "[Attest] algId mismatch" (a.algId == algId)
+              assertMsg "[Attest] attestation expired" (now <= a.expires)
+              assertMsg "[Attest] issuer not a committee member"
+                (Foldable.elem a.issuer committee.members)
+
+              assertMsg "[Attest] duplicate issuer in attestation set"
+                (not (Foldable.elem a.issuer seen))
+
+              pure (count + 1, a.issuer :: seen)
+
+          (attestCount, _seenIss) <- foldlUpdate validateOne (0, []) attestations
+          assertMsg "[Attest] insufficient attestations"
+            (attestCount >= committee.threshold)
+
+        let ratchetKey = (operator, device.publicKey, senderId, epoch)
+        mStateCid <- lookupByKey @RatchetState ratchetKey
+        case mStateCid of
+          None -> do
+            assertMsg "[Ratchet] first counter must be 1" (counter == 1)
+            _ <- create RatchetState with
+              operator
+              edge
+              deviceKey = device.publicKey
+              senderId
+              epoch
+              lastCtr = counter
+            pure ()
+          Some rsCid -> do
+            rs <- fetch rsCid
+            assertMsg "[Ratchet] non-monotonic or non-consecutive counter"
+              (counter == rs.lastCtr + 1)
+            archive rsCid
+            _ <- create RatchetState with
+              operator
+              edge
+              deviceKey = device.publicKey
+              senderId
+              epoch
+              lastCtr = counter
+            pure ()
+
+        let (pIdOpt, lHOpt, rahOpt, vkOpt) =
+              case (useZkPac, policyProof) of
+                (True, Some pf) -> (Some pf.policyId, Some pf.leafHash, Some pf.revealedAttrsHash, Some pf.vkId)
+                _               -> (None, None, None, None)
+
+        create RelayLog with
+          operator              = operator
+          edge                  = edge
+          sp                    = sp
+          senderId              = senderId
+          deviceOwner           = device.owner
+          deviceKey             = device.publicKey
+          bcCid                 = self
+          digest                = digest
+          ciphertextB64         = encryptedMessage
+          ephX25519Hex          = ephX25519Hex
+          aad                   = aad
+          counter               = counter
+          ts                    = msgTimestamp
+          epoch                 = epoch
+          merkleRoot            = merkleRoot
+          algId                 = algId
+          useZkPac              = useZkPac
+          policyIdOpt           = pIdOpt
+          leafHashOpt           = lHOpt
+          revealedAttrsHashOpt  = rahOpt
+          vkIdOpt               = vkOpt
+          spSignatureB64        = spSignatureB64
+          spEd25519PubHex       = spEd25519PubHex
+          pqSignatureB64        = pqSignatureB64
+          pqPubKey              = pqPubKey
+          kyberCiphertextB64    = kyberCiphertextB64
+          acked                 = False
+
+    nonconsuming choice LogExecutionTime : Text
+      with
+        operation     : Text
+        executionTime : Int
+      controller operator
+      do
+        _ <- create LogRequest with
+          operator = operator
+          logData  =
+            "{ \"logs\": [ { \"operator\": \"" <> partyToTextClean operator
+            <> "\", \"op\": \"" <> operation
+            <> "\", \"time\": " <> show executionTime <> " } ] }"
+          endpoint = "http://localhost:5000/log_batch_activity"
+        pure "Logged"
+
+-- ─────────────────────────────────────────────────────────────
+-- Constants (demo)
+
+dev1X25519Hex : Text
+dev1X25519Hex =
+  "9514e4cdb9003b5bc30cbbb57b87c57e5786eed1b4731e76b0ec4700c72d4926"
+
+dev1PqPubB64 : Text
+dev1PqPubB64 =
+  "LeCGm0TOTJmFR8UrruNwC1aPrxK+xflosVViRMSkloJcGHBD2ZiErtObCrxqqTiAQ0BjX3mJjAVJqosdekiW5GcbHCoEMjqiiEF1+1G5xtFmTwQtq0m6y/zP2flJ6WZ5X3UVlTdezgV80OpZtltA/0NxHZZEeZnCI/pmbncAaVcgAhlyfAVBLSMeDskHXMFExLU9ThMv/gxks6RCSyGHM9dOJ+vNQMRvz4mHFvBjY0MEIddO9CmtT8sZilYKE9sd1+w8tXK7CuhmKbV+LIy/V0kCfGelNbZmclkyUey7/jrITDEeJDYrbtywsnxHVMIBBAqqc4SwcWFb0SNqfpiOdgoWnjWccTnBkfGdoMJzCkFXYiW02Te9xSQckrozn2s//MEJWcisfMaBBxs0TzceHhZTWMYKknnF1xrMaeWv0RtrR2ol0fO7ygxNvzk6v9Cn35mVRGwxPGRYy2LHRCFmQPIxnWSH1Ee2Cxav+cpZdGamyuo7MhVcJbwYDTDDLqxXs5YjWAWMXHkWHsFc7DHNYStopkp1IteZXyNLD8WKNGyMAjNtcywsqStGUEwokutnq0M5WagLsOMU/5Ig8QV41NWNK2Vt2jq/DDWVbFQ3xUB6v0HBzJmAcdQexTFSRgYVK3ZGgik0xgmFVHFuoKQlGNMU5SAERHmqhwNNeSUUVxkoRVxXAL3HKQRNgYukIMsxFrCGkBajBpgqBaZxtXh0Y8apCeNWWANwwBWDqmqYKrCU3WC6lgCERDp4HZe1sVUAQKe2RCFE0NZsOdB3dgU1sGXIRtor/6R8UJl2IkFL/kiRoFw9rNMwFquhkRqhnrIROcZ8EtaM/YRMX9dTXwasj1VuK+UhY/i7MvEmKWAZArar/BUgIPpOPtll1nJHSnW7i+dO0qy5SHQ4BMtWOUcUarRFWKZ1w4wG9WF0vcm8PRqORtA3RAIflpHNmwybisSsumrAiEjHz5iEQwm9UfMlnyCOAMmECMApJlW/z5cxGwSsuVakUYOZtqMJx0IoXlKRYlcTNnGtphyagoAfYqcAlvAHuKMzFWBwpld5I4APeZvJhVlP4BRQQYhYKGRpZxQJc2I43CxLLFOrk9lRzPWe7CyZmmazmmSxJoomvaIJrQsaKQwusap8rygxEIZ0aSo5IfARQ0EQ5hGtHuqkXBNPnIrPzcGHE6IrbDc8aRK9AXS1OSORlZdTe+s11yh7I4uR7qiFV4I/ypdPwnwoJ3dJcUScgUFp6VPJ0+VjvqJZbXwe/9pALjdrstaEE6pUvngCPlylMgvImdfFKzDBO+Q6JNl31ZtyVMYMlmqmERpM9OkOgwTN8nJcp2U4jHpHOJOdbHkAOemq6JE3kKxs/TPIpEypsHbPYdGclbxFx9dTwnYVfOJGkPPOg7WSzVczIMydq+kuNmcvVqi5V+C6RZlTc9eQJgzEBuoaa3cr7/e2IGp2WZZLKwIJwoKAVgZtTbmyO+OoAwHEwkFvD1IdLoUK0qKaTcYBQwYrAUpFyiysrciqfhyISoUHbHwWvCu5h/mC6atVNtF9dkybVdozvI64LVL4SxRw5N+mlExZfPFc41U="
+
+-- ─────────────────────────────────────────────────────────────
+-- ZK-PAC demo anchors (for running the bench without extra setup)
+
+zkPolicyIdDemo : Text
+zkPolicyIdDemo = "POLICY_DEMO_V1"
+
+-- For demo correctness with on-ledger merklePath check:
+-- make leafHash == snapshot merkleRoot ("genesis") and merklePath = []
+zkLeafHashDemo : Text
+zkLeafHashDemo = "genesis"
+
+zkAllowedAttrsDemo : [Text]
+zkAllowedAttrsDemo =
+  ["clearance=A","region=EU","role=writer","dept=ops","loc=office"]
+
+zkVkIdDemo : Text
+zkVkIdDemo = "VK_DEMO_V1"
+
+-- ─────────────────────────────────────────────────────────────
+-- Setup & utility scripts
+
+ensureDevice :
+  Party -> Party -> Party -> Party -> Text -> Text -> AlgId -> [Text] -> Optional Text -> Script ()
+ensureDevice op owner broker edge name publicKey alg attributes pqOpt = do
+  devs <- query @Device op
+
+  let pqOptN =
+        case pqOpt of
+          None   -> None
+          Some t -> Some (normalizeB64 t)
+
+  let matches : [(ContractId Device, Device)] =
+        [ (cid, d) | (cid, d) <- devs, d.owner == owner && d.publicKey == publicKey ]
+
+  case matches of
+    [] -> do
+      _ <- submit owner do
+        createCmd Device with
+          owner
+          broker
+          edge
+          name
+          publicKey
+          algId      = alg
+          attributes = attributes
+          pqPubKey   = pqOptN
+      debug ("[setup] device created: " <> name <> " pk=" <> publicKey)
+
+    (cid, d) :: _ -> do
+      if (   d.broker     == broker
+          && d.edge       == edge
+          && d.name       == name
+          && d.algId      == alg
+          && d.attributes == attributes
+          && d.pqPubKey   == pqOptN
+         )
+      then
+        debug ("[setup] device exists: " <> name <> " pk=" <> publicKey)
+      else do
+        debug ("[setup] device differs; replacing: " <> name <> " pk=" <> publicKey)
+        _ <- submit owner do exerciseCmd cid Archive
+        _ <- submit owner do
+          createCmd Device with
+            owner
+            broker
+            edge
+            name
+            publicKey
+            algId      = alg
+            attributes = attributes
+            pqPubKey   = pqOptN
+        debug ("[setup] device replaced: " <> name <> " pk=" <> publicKey)
+
+ensureCommittee : Party -> [Party] -> Int -> Script ()
+ensureCommittee op members threshold = do
+  cs <- query @TACommittee op
+  let exists =
+        case [ () | (_, c) <- cs, c.operator == op ] of
+          _ :: _ -> True
+          []     -> False
+  case exists of
+    True  -> debug "[setup] TACommittee exists"
+    False -> do
+      _ <- submit op do
+        createCmd TACommittee with operator = op, members, threshold
+      debug "[setup] TACommittee created"
+
+ensureGenesisSnapshotViaCommittee : Party -> Script ()
+ensureGenesisSnapshotViaCommittee op = do
+  snaps <- query @TaSnapshot op
+  let hasGenesis =
+        case [ () | (_, s) <- snaps, s.epoch == 0 ] of
+          _ :: _ -> True
+          []     -> False
+  case hasGenesis of
+    True  -> debug "[setup] epoch=0 snapshot exists"
+    False -> do
+      cs <- query @TACommittee op
+      committee <-
+        case [ c | (_, c) <- cs, c.operator == op ] of
+          c :: _ -> pure c
+          []     -> abort "TACommittee missing"
+
+      propCid <- submit op do
+        createCmd SnapshotProposal with
+          operator         = op
+          epoch            = 0
+          merkleRoot       = "genesis"
+          approvers        = []
+          committeeMembers = committee.members
+
+      let toApprove : [Party] =
+            L.take committee.threshold committee.members
+
+      _ <- foldlScript
+            (\cid m -> do
+               _ <- submitMulti [m, op] [] (exerciseCmd cid Approve with approver = m)
+               pure cid)
+            propCid
+            toApprove
+
+      _ <- submit op do exerciseCmd propCid Publish
+      debug "[setup] created genesis snapshot"
+
+ensureZkAnchors : Party -> Text -> Text -> [Text] -> Script ()
+ensureZkAnchors op policyId leafHash allowedAttrs = do
+  mPr <- submit op do lookupByKeyCmd @PolicyRoot (op, policyId)
+  case mPr of
+    Some _ -> debug "[setup] PolicyRoot exists"
+    None -> do
+      _ <- submit op do
+        createCmd PolicyRoot with
+          operator   = op
+          policyId   = policyId
+          merkleRoot = "genesis"
+      debug "[setup] PolicyRoot created"
+
+  mLeaf <- submit op do lookupByKeyCmd @PolicyLeaf (op, (policyId, leafHash))
+  case mLeaf of
+    Some _ -> debug "[setup] PolicyLeaf exists"
+    None -> do
+      _ <- submit op do
+        createCmd PolicyLeaf with
+          operator     = op
+          policyId     = policyId
+          leafHash     = leafHash
+          allowedAttrs = allowedAttrs
+      debug "[setup] PolicyLeaf created"
+
+ensureAllowedVkId : Party -> Text -> Script ()
+ensureAllowedVkId op vkId = do
+  mVk <- submit op do lookupByKeyCmd @AllowedVkId (op, vkId)
+  case mVk of
+    Some _ -> debug "[setup] AllowedVkId exists"
+    None -> do
+      _ <- submit op do
+        createCmd AllowedVkId with operator = op, vkId = vkId
+      debug "[setup] AllowedVkId created"
+
+ensureSPProfile : Party -> Party -> [Text] -> [Text] -> Time -> Script ()
+ensureSPProfile op sp roles attrs expT = do
+  prof <- query @SPProfile op
+  let exists =
+        case [ () | (_, p) <- prof, p.subject == sp ] of
+          _ :: _ -> True
+          []     -> False
+  case exists of
+    True  -> debug "[setup] SPProfile exists"
+    False -> do
+      _ <- submit op do
+        createCmd SPProfile with
+          operator = op
+          subject  = sp
+          roles
+          attrs
+          expires  = expT
+      debug "[setup] SPProfile created"
+
+ensurePolicy
+  : Party -> Party -> Party -> Text
+  -> [Text] -> [Text]
+  -> Time -> Time
+  -> Script ()
+ensurePolicy op sp devOwner devKey reqRoles reqAttrs wStart wEnd = do
+  pols <- query @AccessPolicy op
+  let bySubject = [ (c,p) | (c,p) <- pols, p.subject == sp ]
+  case bySubject of
+    (cid, p) :: _ ->
+      if p.deviceOwner == devOwner && p.deviceKey == devKey
+      then
+        debug "[setup] AccessPolicy exists (same device); OK"
+      else do
+        _ <- submit op do exerciseCmd cid Archive
+        _ <- submit op do
+          createCmd AccessPolicy with
+            operator      = op
+            subject       = sp
+            deviceOwner   = devOwner
+            deviceKey     = devKey
+            requiredRoles = reqRoles
+            requiredAttrs = reqAttrs
+            windowStart   = wStart
+            windowEnd     = wEnd
+        debug "[setup] AccessPolicy replaced (device/key changed)"
+    [] -> do
+      _ <- submit op do
+        createCmd AccessPolicy with
+          operator      = op
+          subject       = sp
+          deviceOwner   = devOwner
+          deviceKey     = devKey
+          requiredRoles = reqRoles
+          requiredAttrs = reqAttrs
+          windowStart   = wStart
+          windowEnd     = wEnd
+      debug "[setup] AccessPolicy created"
+
+setup : Script (ContractId BrokerContract)
+setup = script do
+  parties <- listKnownParties
+  let cache =
+        Foldable.foldl
+          (\m p -> case p.displayName of
+              Some n -> Map.insert n p.party m
+              None   -> m)
+          Map.empty
+          parties
+
+  let getOrAlloc name =
+        case Map.lookup name cache of
+          Some p -> debug ("[setup] reusing " <> name) >> pure p
+          None   -> debug ("[setup] allocating " <> name)
+                 >> allocatePartyWithHint name (PartyIdHint name)
+
+  op     <- getOrAlloc "Operator"
+  edge1  <- getOrAlloc "EdgeNode1"
+  edge2  <- getOrAlloc "EdgeNode2"
+  sp1    <- getOrAlloc "ServiceProvider1"
+  sp2    <- getOrAlloc "ServiceProvider2"
+  dev1   <- getOrAlloc "IoTDevice1"
+  dev2   <- getOrAlloc "IoTDevice2"
+  dev3   <- getOrAlloc "IoTDevice3"
+
+  now <- getTime
+  let edges   = [(edge1, now), (edge2, now)]
+  let dev1Pk  = dev1X25519Hex
+  let dev2Pk  = "9514e4cdb9003b5bc30cbbb57b87c57e5786eed1b4731e76b0ec4700c72d4926"
+  let dev3Pk  = "PK3"
+  let devices = [(dev1, dev1Pk), (dev2, dev2Pk), (dev3, dev3Pk)]
+
+  bcs <- query @BrokerContract op
+  bcCid <-
+    case [ c | (c,b) <- bcs, b.operator == op ] of
+      c :: _ -> debug "[setup] BrokerContract exists" >> pure c
+      [] -> do
+        debug "[setup] creating BrokerContract"
+        submit op do
+          createCmd BrokerContract with
+            operator         = op
+            edgeNodes        = edges
+            iotDevices       = devices
+            cachedValidNodes = edges
+            validUntil       = addRelTime now (seconds 3600)
+
+  ensureDevice op dev1 op edge1 "Device1" dev1Pk
+    ALG_HYBRID_X25519_KYBER_AESGCM_HYBRID_SIG
+    ["loc=office","status=active"]
+    (Some dev1PqPubB64)
+
+  ensureDevice op dev2 op edge1 "Device2" dev2Pk
+    ALG_X25519_AESGCM_ED25519
+    ["loc=yard","status=active"]
+    None
+
+  ensureDevice op dev3 op edge1 "Device3" dev3Pk
+    ALG_X25519_AESGCM_ED25519
+    ["loc=quay","status=maintenance"]
+    None
+
+  ensureCommittee op [edge1, edge2] 2
+  ensureGenesisSnapshotViaCommittee op
+
+  -- Create demo ZK anchors (PolicyRoot + PolicyLeaf) for ZK bench runs
+  ensureZkAnchors op zkPolicyIdDemo zkLeafHashDemo zkAllowedAttrsDemo
+
+  -- ✅ Allowlist demo vkId
+  ensureAllowedVkId op zkVkIdDemo
+
+  let winStart = now
+      winEnd   = addRelTime now (seconds 86400)
+
+  ensureSPProfile op sp1
+    ["writer","partner"]
+    ["clearance=A","region=EU"]
+    (addRelTime now (seconds 86400))
+
+  ensurePolicy op sp1 dev1 dev1Pk
+    ["writer"]
+    ["clearance=A"]
+    winStart
+    winEnd
+
+  ensureSPProfile op sp2
+    ["writer","partner"]
+    ["clearance=A","region=EU"]
+    (addRelTime now (seconds 86400))
+
+  ensurePolicy op sp2 dev2 dev2Pk
+    ["writer"]
+    ["clearance=A"]
+    winStart
+    winEnd
+
+  debug "[setup] done"
+  pure bcCid
+
+-- ─────────────────────────────────────────────────────────────
+-- ✅ Fresh-run helpers
+
+resetAllRatchets : Party -> Script ()
+resetAllRatchets op = do
+  rats <- query @RatchetState op
+  _ <- foldlScript
+        (\() (cid, _) -> do
+           _ <- submit op do exerciseCmd cid Archive
+           pure ())
+        ()
+        rats
+  debug ("[setupFresh] cleared RatchetStates=" <> show (L.length rats))
+  pure ()
+
+resetAllRelayLogs : Party -> Script ()
+resetAllRelayLogs op = do
+  logs <- query @RelayLog op
+  _ <- foldlScript
+        (\() (cid, _) -> do
+           _ <- submit op do exerciseCmd cid Archive
+           pure ())
+        ()
+        logs
+  debug ("[setupFresh] cleared RelayLogs=" <> show (L.length logs))
+  pure ()
+
+setupFresh : Script (ContractId BrokerContract)
+setupFresh = script do
+  parties <- listKnownParties
+  let op = findParty parties "Operator"
+  resetAllRatchets op
+  resetAllRelayLogs op
+  setup
+
+-- ─────────────────────────────────────────────────────────────
+-- Tests
+
+testList : Script ()
+testList = script do
+  ps <- listKnownParties
+  let ops : [Party] =
+        [ p.party | p <- ps, p.displayName == Some "Operator" ]
+  op <- case ops of
+    x :: _ -> pure x
+    []     -> abort "Operator not found"
+
+  bcs   <- query @BrokerContract op
+  devs  <- query @Device op
+  snaps <- query @TaSnapshot op
+  comms <- query @TACommittee op
+  props <- query @SnapshotProposal op
+  atts  <- query @SigAttestation op
+  zkats <- query @ZkVerifyAttestation op
+  pols  <- query @AccessPolicy op
+  profs <- query @SPProfile op
+  rks   <- query @RevokedKey op
+  rats  <- query @RatchetState op
+  logs  <- query @RelayLog op
+  vks   <- query @AllowedVkId op
+
+  debug ("[list] BrokerContracts=" <> show bcs)
+  debug ("[list] Devices="         <> show devs)
+  debug ("[list] TaSnapshots="     <> show snaps)
+  debug ("[list] Committees="      <> show comms)
+  debug ("[list] Proposals="       <> show props)
+  debug ("[list] Attestations="    <> show atts)
+  debug ("[list] ZkAttestations="  <> show zkats)
+  debug ("[list] Policies="        <> show pols)
+  debug ("[list] Profiles="        <> show profs)
+  debug ("[list] RevokedKeys="     <> show rks)
+  debug ("[list] RatchetStates="   <> show rats)
+  debug ("[list] RelayLogs="       <> show logs)
+  debug ("[list] AllowedVkIds="    <> show vks)
+  pure ()
+
+-- Legacy verify test (non-ZK)
+testVerify : Script (ContractId RelayLog)
+testVerify = script do
+  _ <- setup
+
+  ps <- listKnownParties
+  let op       = findParty ps "Operator"
+  let edge     = findParty ps "EdgeNode1"
+  let edge2    = findParty ps "EdgeNode2"
+  let sp       = findParty ps "ServiceProvider2"
+  let devOwner = findParty ps "IoTDevice2"
+
+  bcs <- query @BrokerContract op
+  bcCid <-
+    case bcs of
+      (c, _) :: _ -> pure c
+      []          -> abort "No BrokerContract"
+
+  devs <- query @Device op
+  (devCid, dev) <-
+    case [ (c, d) | (c, d) <- devs, d.name == "Device2" ] of
+      x :: _ -> pure x
+      []     -> abort "Device2 not found"
+  let devPk = dev.publicKey
+
+  snaps <- query @TaSnapshot op
+  snapshot0 <-
+    case [ s | (_, s) <- snaps, s.epoch == 0 ] of
+      s :: _ -> pure s
+      []     -> abort "No epoch 0 snapshot"
+  let merkleRoot0 = snapshot0.merkleRoot
+
+  now <- getTime
+  let senderPk = "deadbeef"
+  let senderId = "Sender1"
+  let alg      = ALG_X25519_AESGCM_ED25519
+
+  let ciphertext = "HELLO_ENC"
+  let eph =
+        "0000000000000000000000000000000000000000000000000000000000000000"
+  let spPub = "deadbeef"
+  let ctr = 1
+  let dg = mkDigestText ciphertext eph None spPub devPk senderPk now 0 ctr alg
+
+  att1 <- submit edge do
+    createCmd SigAttestation with
+      operator        = op
+      issuer          = edge
+      digest          = dg
+      deviceOwner     = devOwner
+      devicePublicKey = devPk
+      senderPublicKey = senderPk
+      algId           = alg
+      ts              = now
+      expires         = addRelTime now (seconds 3600)
+
+  att2 <- submit edge2 do
+    createCmd SigAttestation with
+      operator        = op
+      issuer          = edge2
+      digest          = dg
+      deviceOwner     = devOwner
+      devicePublicKey = devPk
+      senderPublicKey = senderPk
+      algId           = alg
+      ts              = now
+      expires         = addRelTime now (seconds 3600)
+
+  relayCid <- submitMulti [edge, op] [] do
+    exerciseCmd bcCid VerifyAndRelayMessage with
+      edge               = edge
+      sp                 = sp
+      senderId           = senderId
+      algId              = alg
+      targetDevice       = devCid
+      encryptedMessage   = ciphertext
+      devicePublicKey    = devPk
+      senderPublicKey    = senderPk
+      digest             = dg
+      msgTimestamp       = now
+      epoch              = 0
+      merkleRoot         = merkleRoot0
+      useZkPac           = False
+      policyProof        = None
+      attestations       = [att1, att2]
+      zkAttestations     = []
+      spSignatureB64     = "ZHVtbXk="
+      spEd25519PubHex    = spPub
+      ephX25519Hex       = eph
+      aad                = None
+      counter            = ctr
+      pqSignatureB64     = None
+      pqPubKey           = None
+      kyberCiphertextB64 = None
+
+  pure relayCid
+
+-- Hybrid verify test (non-ZK)
+testVerifyHybrid : Script (ContractId RelayLog)
+testVerifyHybrid = script do
+  _ <- setup
+
+  ps <- listKnownParties
+  let op       = findParty ps "Operator"
+  let edge     = findParty ps "EdgeNode1"
+  let edge2    = findParty ps "EdgeNode2"
+  let sp       = findParty ps "ServiceProvider1"
+  let devOwner = findParty ps "IoTDevice1"
+
+  bcs <- query @BrokerContract op
+  bcCid <-
+    case bcs of
+      (c, _) :: _ -> pure c
+      []          -> abort "No BrokerContract"
+
+  devs <- query @Device op
+  (dev1Cid, dev1) <-
+    case [ (c, d) | (c, d) <- devs, d.name == "Device1" ] of
+      x :: _ -> pure x
+      []     -> abort "Device1 not found"
+  let dev1Pk = dev1.publicKey
+
+  snaps <- query @TaSnapshot op
+  snapshot0 <-
+    case [ s | (_, s) <- snaps, s.epoch == 0 ] of
+      s :: _ -> pure s
+      []     -> abort "No epoch 0 snapshot"
+  let merkleRoot0 = snapshot0.merkleRoot
+
+  now <- getTime
+  let senderPk = "deadbeef"
+  let senderId = "Sender1"
+  let alg      = ALG_HYBRID_X25519_KYBER_AESGCM_HYBRID_SIG
+
+  let pqSigB64 = "cHFfc2lnX2R1bW15"
+  let kybCtB64 = "a3liZXJfY3Q="
+  let pqPubB64 = dev1PqPubB64
+
+  let ciphertext = "HELLO_ENC"
+  let eph =
+        "0000000000000000000000000000000000000000000000000000000000000000"
+  let spPub = "deadbeef"
+  let ctr = 1
+  let dg = mkDigestText ciphertext eph None spPub dev1Pk senderPk now 0 ctr alg
+
+  att1 <- submit edge do
+    createCmd SigAttestation with
+      operator        = op
+      issuer          = edge
+      digest          = dg
+      deviceOwner     = devOwner
+      devicePublicKey = dev1Pk
+      senderPublicKey = senderPk
+      algId           = alg
+      ts              = now
+      expires         = addRelTime now (seconds 3600)
+
+  att2 <- submit edge2 do
+    createCmd SigAttestation with
+      operator        = op
+      issuer          = edge2
+      digest          = dg
+      deviceOwner     = devOwner
+      devicePublicKey = dev1Pk
+      senderPublicKey = senderPk
+      algId           = alg
+      ts              = now
+      expires         = addRelTime now (seconds 3600)
+
+  relayCid <- submitMulti [edge, op] [] do
+    exerciseCmd bcCid VerifyAndRelayMessage with
+      edge               = edge
+      sp                 = sp
+      senderId           = senderId
+      algId              = alg
+      targetDevice       = dev1Cid
+      encryptedMessage   = ciphertext
+      devicePublicKey    = dev1Pk
+      senderPublicKey    = senderPk
+      digest             = dg
+      msgTimestamp       = now
+      epoch              = 0
+      merkleRoot         = merkleRoot0
+      useZkPac           = False
+      policyProof        = None
+      attestations       = [att1, att2]
+      zkAttestations     = []
+      spSignatureB64     = "ZHVtbXk="
+      spEd25519PubHex    = spPub
+      ephX25519Hex       = eph
+      aad                = None
+      counter            = ctr
+      pqSignatureB64     = Some pqSigB64
+      pqPubKey           = Some pqPubB64
+      kyberCiphertextB64 = Some kybCtB64
+
+  pure relayCid

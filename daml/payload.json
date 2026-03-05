@@ -1,0 +1,6 @@
+{
+    "sender": "OperatorPublicKey",
+    "recipient": "Device1PublicKey",
+    "message": "Emergency Alert!",
+    "shared_secret": "<shared-secret>"
+}
