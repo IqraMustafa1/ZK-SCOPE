@@ -291,7 +291,7 @@ verifyAndRelayIfNeeded edge op sp senderId algId useZkPac policyProof
               _ ->
                 (None, None, None)
 
-      -- ✅ FIX: compute canonical digest EXACTLY as the ledger does
+      --compute canonical digest EXACTLY as the ledger does
       let ciphertext = "HELLO_ENC"
       let eph        = "deadbeef"
       let aadOpt     = None
@@ -309,7 +309,7 @@ verifyAndRelayIfNeeded edge op sp senderId algId useZkPac policyProof
               ctr
               algId
 
-      -- ✅ FIX: ignore incoming digest + incoming attCids; create/reuse attestations for digestCanon
+      -- ignore incoming digest + incoming attCids; create/reuse attestations for digestCanon
       now2 <- getTime
       let expires2 = addRelTime now2 (seconds 600)
 
@@ -600,4 +600,5 @@ wipePerfSamples = script do
   rows <- query @PerfSample op
   mapScript_ (\(cid, _) -> submit op do exerciseCmd cid Archive) rows
   debug "[wipePerfSamples] archived all PerfSample rows."
+
   pure ()
